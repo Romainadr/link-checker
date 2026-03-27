@@ -126,16 +126,33 @@ function run() {
 
 /* ── Extraction + comparaison ─────────────────────────────── */
 
+function unwrapSafeLinks(href) {
+  // Microsoft Defender SafeLinks rewrites URLs to safelinks.protection.outlook.com
+  // Extract the real destination URL from the ?url= parameter
+  try {
+    var u = new URL(href);
+    if (u.hostname.indexOf('safelinks.protection.outlook.com') !== -1) {
+      var real = u.searchParams.get('url');
+      if (real) return real;
+    }
+  } catch(e) {}
+  return href;
+}
+
 function checkLinks(html) {
   var doc = new DOMParser().parseFromString(html, 'text/html');
   var anchors = doc.querySelectorAll('a[href]');
   var results = [];
 
   for (var i = 0; i < anchors.length; i++) {
-    var href = (anchors[i].getAttribute('href') || '').trim();
+    var rawHref = (anchors[i].getAttribute('href') || '').trim();
     var text = (anchors[i].textContent || '').replace(/\s+/g, ' ').trim();
 
-    if (!href || /^(mailto:|tel:|#|javascript:)/i.test(href)) continue;
+    if (!rawHref || /^(mailto:|tel:|#|javascript:)/i.test(rawHref)) continue;
+
+    // Unwrap SafeLinks to get real destination
+    var href = unwrapSafeLinks(rawHref);
+    var isSafeLinks = (href !== rawHref);
 
     var hrefDomain = getDomain(href);
     if (!hrefDomain) continue;
@@ -151,7 +168,15 @@ function checkLinks(html) {
       }
     }
 
-    results.push({ text: text || '(vide)', href: href, hrefDomain: hrefDomain, mismatch: mismatch, reason: reason });
+    results.push({
+      text: text || '(vide)',
+      href: href,
+      rawHref: rawHref,
+      hrefDomain: hrefDomain,
+      mismatch: mismatch,
+      reason: reason,
+      safelinks: isSafeLinks
+    });
   }
   return results;
 }
@@ -203,6 +228,9 @@ function render(links) {
     h += '<div class="link' + (l.mismatch ? ' mismatch' : '') + '">';
     h += '<div class="lbl">' + esc(trunc(l.text, 80)) + '</div>';
     h += '<div class="url">→ ' + esc(trunc(l.href, 120)) + '</div>';
+    if (l.safelinks) {
+      h += '<div class="url" style="color:#0078d4;font-style:italic">🛡 URL deballée depuis SafeLinks</div>';
+    }
     if (l.mismatch) {
       h += '<div class="real">⚠ ' + esc(l.reason) + '</div>';
       h += '<span class="tag ko">MISMATCH</span>';
