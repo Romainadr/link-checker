@@ -7,18 +7,18 @@
 
   <!-- ⚠️ REMPLACER ci-dessous avant déploiement :
        1. L'Id par un GUID unique (PowerShell : [guid]::NewGuid())
-       2. GITHUB_USER par ton nom d'utilisateur GitHub
-       3. REPO_NAME par le nom de ton repo                         -->
+       2. romainadr par ton nom d'utilisateur GitHub
+       3. link-checker par le nom de ton repo                         -->
 
-  <Id>XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX</Id>
+  <Id>ac5e86f3-8df9-44dc-9d3d-4f57511ea8f5</Id>
   <Version>1.0.0</Version>
   <ProviderName>EMPIRYS</ProviderName>
   <DefaultLocale>fr-FR</DefaultLocale>
   <DisplayName DefaultValue="Link Checker"/>
   <Description DefaultValue="Vérifie que les liens affichés dans un mail correspondent aux URLs réelles."/>
 
-  <IconUrl DefaultValue="https://GITHUB_USER.github.io/REPO_NAME/icon-64.png"/>
-  <HighResolutionIconUrl DefaultValue="https://GITHUB_USER.github.io/REPO_NAME/icon-128.png"/>
+  <IconUrl DefaultValue="https://romainadr.github.io/link-checker/icon-64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://romainadr.github.io/link-checker/icon-128.png"/>
   <SupportUrl DefaultValue="https://empirys.com"/>
 
   <Hosts><Host Name="Mailbox"/></Hosts>
@@ -30,7 +30,7 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://GITHUB_USER.github.io/REPO_NAME/src/taskpane.html"/>
+        <SourceLocation DefaultValue="https://romainadr.github.io/link-checker/src/taskpane.html"/>
         <RequestedHeight>450</RequestedHeight>
       </DesktopSettings>
     </Form>
@@ -78,13 +78,13 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16" DefaultValue="https://GITHUB_USER.github.io/REPO_NAME/icon-16.png"/>
-        <bt:Image id="Icon.32" DefaultValue="https://GITHUB_USER.github.io/REPO_NAME/icon-32.png"/>
-        <bt:Image id="Icon.80" DefaultValue="https://GITHUB_USER.github.io/REPO_NAME/icon-80.png"/>
+        <bt:Image id="Icon.16" DefaultValue="https://romainadr.github.io/link-checker/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="https://romainadr.github.io/link-checker/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="https://romainadr.github.io/link-checker/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Cmd.Url"      DefaultValue="https://GITHUB_USER.github.io/REPO_NAME/src/commands.html"/>
-        <bt:Url id="Taskpane.Url"  DefaultValue="https://GITHUB_USER.github.io/REPO_NAME/src/taskpane.html"/>
+        <bt:Url id="Cmd.Url"      DefaultValue="https://romainadr.github.io/link-checker/src/commands.html"/>
+        <bt:Url id="Taskpane.Url"  DefaultValue="https://romainadr.github.io/link-checker/src/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Grp.Label" DefaultValue="Link Checker"/>
