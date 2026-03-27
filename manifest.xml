@@ -5,17 +5,12 @@
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xsi:type="MailApp">
 
-  <!-- ⚠️ REMPLACER ci-dessous avant déploiement :
-       1. L'Id par un GUID unique (PowerShell : [guid]::NewGuid())
-       2. romainadr par ton nom d'utilisateur GitHub
-       3. link-checker par le nom de ton repo                         -->
-
-  <Id>ac5e86f3-8df9-44dc-9d3d-4f57511ea8f5</Id>
-  <Version>1.0.0</Version>
+  <Id>73cbd09c-f705-4278-af6c-dd949a310e28</Id>
+  <Version>1.0.0.0</Version>
   <ProviderName>EMPIRYS</ProviderName>
   <DefaultLocale>fr-FR</DefaultLocale>
   <DisplayName DefaultValue="Link Checker"/>
-  <Description DefaultValue="Vérifie que les liens affichés dans un mail correspondent aux URLs réelles."/>
+  <Description DefaultValue="Verifie que les liens affiches dans un mail correspondent aux URLs reelles."/>
 
   <IconUrl DefaultValue="https://romainadr.github.io/link-checker/icon-64.png"/>
   <HighResolutionIconUrl DefaultValue="https://romainadr.github.io/link-checker/icon-128.png"/>
@@ -88,10 +83,10 @@
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Grp.Label" DefaultValue="Link Checker"/>
-        <bt:String id="Btn.Label" DefaultValue="Vérifier les liens"/>
+        <bt:String id="Btn.Label" DefaultValue="Verifier les liens"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="Btn.Tip" DefaultValue="Vérifie si les URLs réelles correspondent au texte affiché."/>
+        <bt:String id="Btn.Tip" DefaultValue="Verifie si les URLs reelles correspondent au texte affiche."/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>
