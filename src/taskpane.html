@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Link Checker</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;background:#fff}
+
+.hdr{padding:10px 14px;background:#f3f2f1;border-bottom:1px solid #edebe9;display:flex;align-items:center;gap:8px}
+.hdr h1{font-size:14px;font-weight:600}
+
+#banner{padding:10px 14px;border-left:4px solid #c8c6c4;background:#f3f2f1;color:#605e5c;display:flex;align-items:center;gap:8px;min-height:44px}
+#banner.ok{border-color:#107c10;background:#dff6dd;color:#107c10}
+#banner.ko{border-color:#a4262c;background:#fde7e9;color:#a4262c}
+.b-icon{font-size:18px;flex-shrink:0}
+.b-title{font-size:13px;font-weight:600}
+.b-sub{font-size:11px;margin-top:2px;opacity:.85}
+
+.spin{width:16px;height:16px;border:2px solid #edebe9;border-top-color:#0078d4;border-radius:50%;animation:r .7s linear infinite;flex-shrink:0}
+@keyframes r{to{transform:rotate(360deg)}}
+
+#btn{display:block;width:calc(100% - 28px);margin:8px 14px;padding:6px;background:#0078d4;color:#fff;border:none;border-radius:2px;cursor:pointer;font:500 13px 'Segoe UI',sans-serif}
+#btn:hover{background:#106ebe}
+#btn:disabled{background:#c8c6c4;cursor:default}
+
+.stats{display:flex;gap:12px;padding:6px 14px;font-size:11px;color:#605e5c}
+.stats b{font-weight:600}
+
+#list{padding:0 14px 14px}
+.link{padding:8px;margin-bottom:4px;border-radius:2px;background:#f3f2f1;border-left:3px solid #107c10;font-size:12px}
+.link.mismatch{border-color:#a4262c;background:#fff3f4}
+.lbl{font-weight:500;margin-bottom:2px;word-break:break-all}
+.url{color:#605e5c;font-size:11px;word-break:break-all}
+.real{color:#a4262c;font-size:11px;margin-top:4px;line-height:1.4}
+.tag{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;margin-top:4px}
+.tag.ok{background:#dff6dd;color:#107c10}
+.tag.ko{background:#fde7e9;color:#a4262c}
+
+.empty{padding:10px 14px;color:#605e5c;font-size:12px;font-style:italic}
+.foot{padding:8px 14px;font-size:10px;color:#a19f9d;text-align:center}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <span style="font-size:16px">🔗</span>
+  <h1>Link Checker</h1>
+</div>
+
+<div id="banner">
+  <div class="spin"></div>
+  <div><div class="b-title">Initialisation…</div></div>
+</div>
+
+<button id="btn" disabled>↻ Ré-analyser</button>
+
+<div class="stats">
+  <span>Liens : <b id="c-total">-</b></span>
+  <span>OK : <b id="c-ok">-</b></span>
+  <span>Suspects : <b id="c-ko" style="color:#a4262c">-</b></span>
+</div>
+
+<div id="list"></div>
+<div class="foot">Analyse 100% locale · aucune donnée transmise · EMPIRYS</div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════
+   Link Checker — Office.js Add-in
+   Compare le texte affiché dans chaque <a> avec son href.
+   Si le texte ressemble à une URL et que le domaine diffère
+   du href → mismatch signalé.
+   ═══════════════════════════════════════════════════════════ */
+
+var currentItemId = null;
+
+Office.onReady(function(info) {
+  if (info.host !== Office.HostType.Outlook) return;
+  document.getElementById('btn').addEventListener('click', run);
+
+  // Analyse initiale
+  if (Office.context.mailbox.item) {
+    currentItemId = Office.context.mailbox.item.itemId;
+    run();
+  }
+
+  // Auto-analyse quand l'utilisateur change de mail (task pane épinglé)
+  if (Office.context.mailbox.addHandlerAsync) {
+    Office.context.mailbox.addHandlerAsync(
+      Office.EventType.ItemChanged,
+      function() {
+        var newId = Office.context.mailbox.item ? Office.context.mailbox.item.itemId : null;
+        if (newId && newId !== currentItemId) {
+          currentItemId = newId;
+          run();
+        }
+      }
+    );
+  }
+});
+
+/* ── Analyse ──────────────────────────────────────────────── */
+
+function run() {
+  var btn = document.getElementById('btn');
+  btn.disabled = true;
+  setBanner('load', null, 'Analyse en cours…', null);
+  document.getElementById('list').innerHTML = '';
+
+  Office.context.mailbox.item.body.getAsync(
+    Office.CoercionType.Html,
+    function(result) {
+      btn.disabled = false;
+      if (result.status !== Office.AsyncResultStatus.Succeeded) {
+        setBanner('ko', '⚠️', 'Impossible de lire le contenu', null);
+        return;
+      }
+      render(checkLinks(result.value || ''));
+    }
+  );
+}
+
+/* ── Extraction + comparaison ─────────────────────────────── */
+
+function checkLinks(html) {
+  var doc = new DOMParser().parseFromString(html, 'text/html');
+  var anchors = doc.querySelectorAll('a[href]');
+  var results = [];
+
+  for (var i = 0; i < anchors.length; i++) {
+    var href = (anchors[i].getAttribute('href') || '').trim();
+    var text = (anchors[i].textContent || '').replace(/\s+/g, ' ').trim();
+
+    if (!href || /^(mailto:|tel:|#|javascript:)/i.test(href)) continue;
+
+    var hrefDomain = getDomain(href);
+    if (!hrefDomain) continue;
+
+    var mismatch = false;
+    var reason = '';
+
+    if (looksLikeUrl(text)) {
+      var textDomain = getDomain(text);
+      if (textDomain && textDomain !== hrefDomain) {
+        mismatch = true;
+        reason = 'Le texte affiche "' + textDomain + '" mais le lien pointe vers "' + hrefDomain + '"';
+      }
+    }
+
+    results.push({ text: text || '(vide)', href: href, hrefDomain: hrefDomain, mismatch: mismatch, reason: reason });
+  }
+  return results;
+}
+
+/* ── Helpers ───────────────────────────────────────────────── */
+
+function getDomain(raw) {
+  try {
+    var s = raw.trim();
+    if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+    var h = new URL(s).hostname.toLowerCase().replace(/^www\./, '');
+    var p = h.split('.');
+    return p.length < 2 ? h : p.slice(-2).join('.');
+  } catch(e) { return ''; }
+}
+
+function looksLikeUrl(t) {
+  t = t.trim();
+  return /^https?:\/\//i.test(t) || /^[a-z0-9][a-z0-9\-]*\.[a-z]{2,}/i.test(t);
+}
+
+/* ── Rendu ─────────────────────────────────────────────────── */
+
+function render(links) {
+  var mm = links.filter(function(l){ return l.mismatch; });
+  var total = links.length, okN = total - mm.length, koN = mm.length;
+
+  document.getElementById('c-total').textContent = total;
+  document.getElementById('c-ok').textContent = okN;
+  document.getElementById('c-ko').textContent = koN;
+
+  if (total === 0) {
+    setBanner('ok', '✅', 'Aucun lien dans ce mail', null);
+    document.getElementById('list').innerHTML = '<div class="empty">Pas de lien à analyser.</div>';
+    return;
+  }
+
+  setBanner(
+    koN > 0 ? 'ko' : 'ok',
+    koN > 0 ? '🚨' : '✅',
+    koN > 0 ? koN + ' lien(s) suspect(s)' : 'Tous les liens sont cohérents',
+    koN > 0 ? 'Le texte affiché ne correspond pas à l\'URL réelle' : okN + ' lien(s) vérifié(s)'
+  );
+
+  var sorted = mm.concat(links.filter(function(l){ return !l.mismatch; }));
+  var h = '';
+  for (var i = 0; i < sorted.length; i++) {
+    var l = sorted[i];
+    h += '<div class="link' + (l.mismatch ? ' mismatch' : '') + '">';
+    h += '<div class="lbl">' + esc(trunc(l.text, 80)) + '</div>';
+    h += '<div class="url">→ ' + esc(trunc(l.href, 120)) + '</div>';
+    if (l.mismatch) {
+      h += '<div class="real">⚠ ' + esc(l.reason) + '</div>';
+      h += '<span class="tag ko">MISMATCH</span>';
+    } else {
+      h += '<span class="tag ok">OK</span>';
+    }
+    h += '</div>';
+  }
+  document.getElementById('list').innerHTML = h;
+}
+
+function setBanner(cls, icon, msg, sub) {
+  var b = document.getElementById('banner');
+  b.className = cls === 'load' ? '' : cls;
+  var h = cls === 'load' ? '<div class="spin"></div>' : '<span class="b-icon">' + icon + '</span>';
+  h += '<div><div class="b-title">' + esc(msg) + '</div>';
+  if (sub) h += '<div class="b-sub">' + esc(sub) + '</div>';
+  h += '</div>';
+  b.innerHTML = h;
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function trunc(s, n) { return s.length <= n ? s : s.slice(0, n-1) + '…'; }
+</script>
+</body>
+</html>
