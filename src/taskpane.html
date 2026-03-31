@@ -38,6 +38,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 .tag{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;margin-top:4px}
 .tag.ok{background:#dff6dd;color:#107c10}
 .tag.ko{background:#fde7e9;color:#a4262c}
+.tag.warn{background:#fff4ce;color:#8a6914}
+.link.suspect{border-color:#d83b01;background:#fff8f0}
+.warn-line{color:#d83b01;font-size:11px;margin-top:3px;line-height:1.4}
 
 .empty{padding:10px 14px;color:#605e5c;font-size:12px;font-style:italic}
 .foot{padding:8px 14px;font-size:10px;color:#a19f9d;text-align:center}
@@ -158,8 +161,11 @@ function checkLinks(html) {
     if (!hrefDomain) continue;
 
     var mismatch = false;
+    var suspicious = false;
     var reason = '';
+    var warnings = [];
 
+    // Check 1 : texte URL-like vs href domain mismatch
     if (looksLikeUrl(text)) {
       var textDomain = getDomain(text);
       if (textDomain && textDomain !== hrefDomain) {
@@ -168,17 +174,108 @@ function checkLinks(html) {
       }
     }
 
+    // Check 2 : analyse heuristique du domaine de destination
+    var fullHost = getFullHostname(href);
+    var suspiciousReasons = checkSuspiciousDomain(href, hrefDomain);
+    if (suspiciousReasons && !isTrustedDomain(hrefDomain)) {
+      suspicious = true;
+      warnings = suspiciousReasons;
+      if (!mismatch) {
+        reason = warnings.join(' | ');
+      }
+    }
+
+    var flagged = mismatch || suspicious;
+
     results.push({
       text: text || '(vide)',
       href: href,
       rawHref: rawHref,
       hrefDomain: hrefDomain,
-      mismatch: mismatch,
+      mismatch: flagged,
+      isMismatch: mismatch,
+      isSuspicious: suspicious,
       reason: reason,
+      warnings: warnings,
       safelinks: isSafeLinks
     });
   }
   return results;
+}
+
+/* ── Analyse heuristique du domaine ────────────────────────── */
+
+// Domaines internes de confiance (whitelist)
+var TRUSTED_DOMAINS = [
+  'empirys.com', 'empirys.lu', 'empirys.eu', 'empirys.fr',
+  'microsoft.com', 'office.com', 'outlook.com', 'live.com',
+  'google.com', 'gmail.com', 'linkedin.com', 'github.com',
+  'apple.com', 'icloud.com'
+];
+
+// Mots-cles suspects dans un nom de domaine
+var SUSPICIOUS_KEYWORDS = [
+  'bank', 'banque', 'paypal', 'secure', 'security', 'login',
+  'signin', 'account', 'verify', 'update', 'confirm', 'alert',
+  'suspend', 'locked', 'urgent', 'password', 'credential',
+  'wallet', 'crypto', 'invoice', 'payment', 'billing',
+  'support-', '-support', 'helpdesk', 'service-client'
+];
+
+// Marques souvent usurpees (pour detection typosquatting)
+var BRAND_NAMES = [
+  'microsoft', 'google', 'apple', 'amazon', 'paypal', 'netflix',
+  'facebook', 'instagram', 'whatsapp', 'linkedin', 'twitter',
+  'dropbox', 'adobe', 'oracle', 'salesforce', 'docusign',
+  'stripe', 'shopify', 'zoom', 'slack', 'outlook', 'office365',
+  'onedrive', 'sharepoint', 'teams'
+];
+
+function isTrustedDomain(domain) {
+  for (var i = 0; i < TRUSTED_DOMAINS.length; i++) {
+    if (domain === TRUSTED_DOMAINS[i]) return true;
+  }
+  return false;
+}
+
+function checkSuspiciousDomain(href, domain) {
+  if (!domain || isTrustedDomain(domain)) return null;
+
+  var domainLower = domain.toLowerCase();
+  var reasons = [];
+
+  // 1. Mots-cles suspects dans le domaine
+  for (var i = 0; i < SUSPICIOUS_KEYWORDS.length; i++) {
+    if (domainLower.indexOf(SUSPICIOUS_KEYWORDS[i]) !== -1) {
+      // Verifier que ce n'est pas un domaine legitime contenant ce mot
+      if (!isTrustedDomain(domain)) {
+        reasons.push('Mot-cle sensible "' + SUSPICIOUS_KEYWORDS[i] + '" dans le domaine');
+        break;
+      }
+    }
+  }
+
+  // 2. Typosquatting : le domaine contient un nom de marque mais n'est pas le domaine officiel
+  var domainBase = domainLower.split('.')[0];
+  for (var j = 0; j < BRAND_NAMES.length; j++) {
+    var brand = BRAND_NAMES[j];
+    if (domainBase.indexOf(brand) !== -1 && domainBase !== brand) {
+      reasons.push('Possible usurpation de marque "' + brand + '"');
+      break;
+    }
+  }
+
+  // 3. URL avec path suspect : UUID, hash longs, tracking excessif
+  try {
+    var u = new URL(href.indexOf('://') === -1 ? 'https://' + href : href);
+    var path = u.pathname + u.search;
+    // Path contient des segments type UUID ou hash (>24 chars hex)
+    if (/[a-f0-9\-]{24,}/i.test(path)) {
+      reasons.push('URL contient des identifiants de tracking suspects');
+    }
+  } catch(e) {}
+
+  return reasons.length > 0 ? reasons : null;
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -190,6 +287,14 @@ function getDomain(raw) {
     var h = new URL(s).hostname.toLowerCase().replace(/^www\./, '');
     var p = h.split('.');
     return p.length < 2 ? h : p.slice(-2).join('.');
+  } catch(e) { return ''; }
+}
+
+function getFullHostname(raw) {
+  try {
+    var s = raw.trim();
+    if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+    return new URL(s).hostname.toLowerCase().replace(/^www\./, '');
   } catch(e) { return ''; }
 }
 
@@ -214,26 +319,40 @@ function render(links) {
     return;
   }
 
+  var hasMismatch = links.some(function(l){ return l.isMismatch; });
+  var hasSuspicious = links.some(function(l){ return l.isSuspicious; });
+  var subMsg = '';
+  if (hasMismatch && hasSuspicious) subMsg = 'Incoherences et domaines suspects detectes';
+  else if (hasMismatch) subMsg = 'Le texte affiche ne correspond pas a l\'URL reelle';
+  else if (hasSuspicious) subMsg = 'Domaine(s) de destination suspect(s)';
+  else subMsg = okN + ' lien(s) verifie(s)';
+
   setBanner(
     koN > 0 ? 'ko' : 'ok',
     koN > 0 ? '🚨' : '✅',
-    koN > 0 ? koN + ' lien(s) suspect(s)' : 'Tous les liens sont cohérents',
-    koN > 0 ? 'Le texte affiché ne correspond pas à l\'URL réelle' : okN + ' lien(s) vérifié(s)'
+    koN > 0 ? koN + ' lien(s) suspect(s)' : 'Tous les liens sont coherents',
+    subMsg
   );
 
   var sorted = mm.concat(links.filter(function(l){ return !l.mismatch; }));
   var h = '';
   for (var i = 0; i < sorted.length; i++) {
     var l = sorted[i];
-    h += '<div class="link' + (l.mismatch ? ' mismatch' : '') + '">';
+    var cls = l.mismatch ? (l.isMismatch ? ' mismatch' : ' suspect') : '';
+    h += '<div class="link' + cls + '">';
     h += '<div class="lbl">' + esc(trunc(l.text, 80)) + '</div>';
     h += '<div class="url">→ ' + esc(trunc(l.href, 120)) + '</div>';
     if (l.safelinks) {
-      h += '<div class="url" style="color:#0078d4;font-style:italic">🛡 URL deballée depuis SafeLinks</div>';
+      h += '<div class="url" style="color:#0078d4;font-style:italic">🛡 URL deballee depuis SafeLinks</div>';
     }
-    if (l.mismatch) {
+    if (l.isMismatch) {
       h += '<div class="real">⚠ ' + esc(l.reason) + '</div>';
       h += '<span class="tag ko">MISMATCH</span>';
+    } else if (l.isSuspicious) {
+      for (var w = 0; w < l.warnings.length; w++) {
+        h += '<div class="warn-line">⚠ ' + esc(l.warnings[w]) + '</div>';
+      }
+      h += '<span class="tag warn">SUSPECT</span>';
     } else {
       h += '<span class="tag ok">OK</span>';
     }
