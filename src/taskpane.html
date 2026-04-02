@@ -74,17 +74,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 
 <button id="btn" disabled>&#8635; Re-analyser</button>
 
-<!-- Score -->
-<div id="score-bar" style="display:none;padding:8px 14px">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-    <span style="font-size:11px;font-weight:600;color:#605e5c">Score de confiance</span>
-    <span id="score-val" style="font-size:13px;font-weight:700">—</span>
-  </div>
-  <div style="height:6px;background:#edebe9;border-radius:3px;overflow:hidden">
-    <div id="score-fill" style="height:100%;border-radius:3px;transition:width .4s ease"></div>
-  </div>
-</div>
-
 <!-- Integrity section -->
 <div class="section-title">Integrite du mail</div>
 <div id="integrity"></div>
@@ -264,11 +253,53 @@ function checkIntegrity(senderEmail, subject, html, links) {
     });
   }
 
-  // 2. Collecte des domaines de liens
+  // 2. Coherence expediteur vs liens
   var linkDomains = [];
   for (var i = 0; i < links.length; i++) {
     if (links[i].hrefDomain && linkDomains.indexOf(links[i].hrefDomain) === -1) {
       linkDomains.push(links[i].hrefDomain);
+    }
+  }
+
+  if (isInternal || isTrustedDomain(senderDomain)) {
+    // Expediteur interne ou de confiance : toujours PASS
+    checks.push({
+      id: 'sender-links',
+      label: 'Coherence expediteur / liens',
+      status: 'pass',
+      detail: 'Expediteur de confiance — liens non verifies contre l\'expediteur'
+    });
+  } else {
+    // Expediteur externe non-trusted : verifier pattern phishing
+    var senderDomainLinks = linkDomains.filter(function(d) { return d === senderDomain; });
+    var senderIsSuspicious = senderDomain ? checkSuspiciousDomain('https://' + senderDomain, senderDomain) : null;
+
+    // Domaines suspects dans les liens (ni trusted, ni domaine expediteur, ET heuristique positive)
+    var suspiciousForeignDomains = linkDomains.filter(function(d) {
+      return d !== senderDomain && !isTrustedDomain(d) && checkSuspiciousDomain('https://' + d, d);
+    });
+
+    if (senderIsSuspicious && senderDomainLinks.length > 0) {
+      checks.push({
+        id: 'sender-links',
+        label: 'Coherence expediteur / liens',
+        status: 'fail',
+        detail: 'Expediteur suspect (' + senderDomain + ') avec des liens vers son propre domaine — pattern de phishing'
+      });
+    } else if (suspiciousForeignDomains.length > 0) {
+      checks.push({
+        id: 'sender-links',
+        label: 'Coherence expediteur / liens',
+        status: 'fail',
+        detail: 'Liens vers des domaines suspects : ' + suspiciousForeignDomains.join(', ')
+      });
+    } else {
+      checks.push({
+        id: 'sender-links',
+        label: 'Coherence expediteur / liens',
+        status: 'pass',
+        detail: 'Aucun lien vers un domaine suspect detecte'
+      });
     }
   }
 
@@ -296,7 +327,7 @@ function checkIntegrity(senderEmail, subject, html, links) {
     });
   }
 
-  // 4. Formulations phishing dans le corps
+  // 4. Mots-cles phishing dans le corps
   var bodyText = normalizeText(extractTextFromHtml(html));
   var bodyHits = [];
   for (var b = 0; b < PHISHING_KEYWORDS_BODY.length; b++) {
@@ -591,91 +622,31 @@ function renderLinks(links) {
   document.getElementById('list').innerHTML = h;
 }
 
-/* ── Scoring et banniere globale ─────────────────────────── */
-
-/*  Score de confiance sur 100 (deductions)
-    Depart : 100
-    Expediteur externe non-trusted :       -5
-    Expediteur externe suspect :           -25
-    Mot-cle phishing sujet (par hit) :     -5  (max -15)
-    Formulation phishing corps (par hit) : -10 (max -30)
-    Domaine destination suspect (par dom): -15 (max -30)
-    Domaines inconnus > 3 :                -5
-    Lien mismatch (texte vs href) :        -20 par lien (max -40)
-    Lien suspect heuristique :             -10 par lien (max -30)
-*/
-
-function computeScore(integrity, links) {
-  var score = 100;
-
-  for (var i = 0; i < integrity.length; i++) {
-    var c = integrity[i];
-    if (c.id === 'sender') {
-      if (c.status === 'fail') score -= 25;
-      else if (c.status === 'warn') score -= 5;
-    }
-    if (c.id === 'subject' && c.status === 'warn') {
-      score -= Math.min(15, 5 * (c.detail.match(/,/g) || []).length + 5);
-    }
-    if (c.id === 'body') {
-      if (c.status === 'fail') score -= 30;
-      else if (c.status === 'warn') score -= 10;
-    }
-    if (c.id === 'ext-domains') {
-      if (c.status === 'fail') score -= 25;
-      else if (c.status === 'warn') score -= 5;
-    }
-  }
-
-  var mismatchPenalty = 0;
-  var suspectPenalty = 0;
-  for (var j = 0; j < links.length; j++) {
-    if (links[j].isMismatch) mismatchPenalty += 20;
-    else if (links[j].isSuspicious) suspectPenalty += 10;
-  }
-  score -= Math.min(40, mismatchPenalty);
-  score -= Math.min(30, suspectPenalty);
-
-  return Math.max(0, Math.min(100, score));
-}
+/* ── Banniere globale ────────────────────────────────────── */
 
 function renderGlobalBanner(integrity, links) {
-  var score = computeScore(integrity, links);
+  var failCount = 0;
+  var warnCount = 0;
 
-  // Afficher la barre de score
-  var scoreBar = document.getElementById('score-bar');
-  var scoreVal = document.getElementById('score-val');
-  var scoreFill = document.getElementById('score-fill');
-  scoreBar.style.display = 'block';
-  scoreVal.textContent = score + ' / 100';
+  for (var i = 0; i < integrity.length; i++) {
+    if (integrity[i].status === 'fail') failCount++;
+    if (integrity[i].status === 'warn') warnCount++;
+  }
 
-  var color;
-  if (score >= 80) { color = '#107c10'; scoreVal.style.color = '#107c10'; }
-  else if (score >= 50) { color = '#d83b01'; scoreVal.style.color = '#d83b01'; }
-  else { color = '#a4262c'; scoreVal.style.color = '#a4262c'; }
-  scoreFill.style.width = score + '%';
-  scoreFill.style.background = color;
+  var linkFlags = links.filter(function(l){ return l.mismatch; }).length;
+  failCount += linkFlags;
 
-  // Banniere
-  if (score >= 80) {
-    setBanner('ok', '&#10004;', 'Confiance elevee (' + score + '/100)',
-      links.length + ' lien(s) verifie(s), integrite OK');
-  } else if (score >= 50) {
-    var warnCount = 0;
-    for (var i = 0; i < integrity.length; i++) {
-      if (integrity[i].status !== 'pass') warnCount++;
-    }
-    warnCount += links.filter(function(l){ return l.mismatch; }).length;
-    setBanner('warn', '&#9888;', 'Vigilance recommandee (' + score + '/100)',
-      warnCount + ' point(s) d\'attention detecte(s)');
-  } else {
-    var failCount = 0;
-    for (var k = 0; k < integrity.length; k++) {
-      if (integrity[k].status === 'fail') failCount++;
-    }
-    failCount += links.filter(function(l){ return l.mismatch; }).length;
-    setBanner('ko', '&#128680;', 'Risque eleve (' + score + '/100)',
+  if (failCount > 0) {
+    var total = failCount + warnCount;
+    setBanner('ko', '&#128680;', total + ' alerte(s) detectee(s)',
       'Ce mail presente des signaux de phishing potentiel');
+  } else if (warnCount > 0) {
+    setBanner('warn', '&#9888;', warnCount + ' point(s) d\'attention',
+      'Certains elements meritent votre vigilance');
+  } else {
+    var okLinks = links.length;
+    setBanner('ok', '&#10004;', 'Aucune anomalie detectee',
+      okLinks + ' lien(s) verifie(s), integrite OK');
   }
 }
 
