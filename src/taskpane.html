@@ -27,6 +27,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 #btn:hover{background:#106ebe}
 #btn:disabled{background:#c8c6c4;cursor:default}
 
+.score-bar{padding:8px 14px;display:none}
+.score-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.score-label{font-size:11px;font-weight:600;color:#605e5c}
+.score-value{font-size:13px;font-weight:700}
+.score-track{height:6px;background:#edebe9;border-radius:3px;overflow:hidden}
+.score-fill{height:100%;border-radius:3px;transition:width .4s ease}
+
 .section-title{padding:10px 14px 4px;font-size:12px;font-weight:700;color:#0078d4;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #edebe9;margin-top:6px}
 
 .stats{display:flex;gap:12px;padding:6px 14px;font-size:11px;color:#605e5c}
@@ -34,7 +41,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 
 #integrity,#list{padding:0 14px 8px}
 
-/* Integrity checks */
 .check{padding:7px 10px;margin-bottom:4px;border-radius:2px;font-size:12px;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
 .check-icon{flex-shrink:0;font-size:14px;margin-top:1px}
 .check.pass{background:#f3f2f1;border-left:3px solid #107c10}
@@ -43,7 +49,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 .check-label{font-weight:600;font-size:11px;color:#605e5c}
 .check-detail{font-size:11px;color:#323130;margin-top:2px}
 
-/* Links */
 .link{padding:8px;margin-bottom:4px;border-radius:2px;background:#f3f2f1;border-left:3px solid #107c10;font-size:12px}
 .link.mismatch{border-color:#a4262c;background:#fff3f4}
 .link.suspect{border-color:#d83b01;background:#fff8f0}
@@ -63,7 +68,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 <body>
 
 <div class="hdr">
-  <span style="font-size:16px">🔗</span>
+  <span style="font-size:16px">&#128279;</span>
   <h1>Link Checker</h1>
 </div>
 
@@ -72,13 +77,21 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
   <div><div class="b-title">Initialisation...</div></div>
 </div>
 
+<div class="score-bar" id="score-bar">
+  <div class="score-header">
+    <span class="score-label">Score de confiance</span>
+    <span class="score-value" id="score-val">--</span>
+  </div>
+  <div class="score-track">
+    <div class="score-fill" id="score-fill"></div>
+  </div>
+</div>
+
 <button id="btn" disabled>&#8635; Re-analyser</button>
 
-<!-- Integrity section -->
 <div class="section-title">Integrite du mail</div>
 <div id="integrity"></div>
 
-<!-- Links section -->
 <div class="section-title">Analyse des liens</div>
 <div class="stats">
   <span>Liens : <b id="c-total">-</b></span>
@@ -92,11 +105,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 <script>
 'use strict';
 
-/* ═══════════════════════════════════════════════════════════
-   Link Checker v2 — Office.js Add-in
-   1. Integrite du mail (expediteur, keywords, coherence)
+/* ===================================================================
+   Link Checker v3 — Office.js Add-in
+   1. Integrite du mail (expediteur, sujet, corps, domaines)
    2. Analyse des liens (mismatch, heuristique domaine)
-   ═══════════════════════════════════════════════════════════ */
+   3. Score de confiance pondere sur 100
+   =================================================================== */
 
 var currentItemId = null;
 
@@ -123,7 +137,7 @@ Office.onReady(function(info) {
   }
 });
 
-/* ── Domaines et constantes ──────────────────────────────── */
+/* -- Domaines et constantes ---------------------------------------- */
 
 var ORG_DOMAINS = ['empirys.com', 'empirys.lu', 'empirys.eu', 'empirys.fr'];
 
@@ -133,12 +147,11 @@ var TRUSTED_DOMAINS = [
   'google.com', 'gmail.com', 'linkedin.com', 'github.com',
   'apple.com', 'icloud.com', 'twitter.com', 'x.com',
   'facebook.com', 'instagram.com', 'youtube.com',
-  'amazonaws.com', 'azure.com', 'cloudflare.com', 
+  'amazonaws.com', 'azure.com', 'cloudflare.com',
   'made-in-luxembourg.com', 'made-in-luxembourg.lu',
   'odoo.com', 'docusign.com', 'dropbox.com', 'adobe.com',
   'restez-mieux.fr', 'aka.ms',
-  'netflix.com', 'spotify.com', 'paypal.com',
-  
+  'netflix.com', 'spotify.com', 'paypal.com'
 ];
 
 var SUSPICIOUS_KEYWORDS = [
@@ -182,7 +195,7 @@ var PHISHING_KEYWORDS_BODY = [
   'ouvrir la piece jointe', 'open the attachment'
 ];
 
-/* ── Analyse principale ──────────────────────────────────── */
+/* -- Analyse principale -------------------------------------------- */
 
 function run() {
   var btn = document.getElementById('btn');
@@ -190,10 +203,9 @@ function run() {
   setBanner('load', null, 'Analyse en cours...', null);
   document.getElementById('list').innerHTML = '';
   document.getElementById('integrity').innerHTML = '';
+  document.getElementById('score-bar').style.display = 'none';
 
   var item = Office.context.mailbox.item;
-
-  // Recuperer expediteur + sujet + corps HTML
   var senderEmail = '';
   var subject = '';
 
@@ -217,93 +229,45 @@ function run() {
       var integrity = checkIntegrity(senderEmail, subject, html, links);
       renderIntegrity(integrity);
       renderLinks(links);
-      renderGlobalBanner(integrity, links);
+      renderScore(integrity, links);
     }
   );
 }
 
-/* ── Check integrite du mail ─────────────────────────────── */
+/* -- Check integrite du mail --------------------------------------- */
 
 function checkIntegrity(senderEmail, subject, html, links) {
   var checks = [];
   var senderDomain = getDomainFromEmail(senderEmail);
 
-  // 1. Expediteur interne ou externe + analyse heuristique du domaine
+  // 1. Expediteur
   var isInternal = isOrgDomain(senderDomain);
   if (isInternal) {
     checks.push({
-      id: 'sender',
-      label: 'Expediteur',
-      status: 'pass',
+      id: 'sender', label: 'Expediteur', status: 'pass',
       detail: 'Domaine interne (' + senderDomain + ')'
     });
   } else {
-    // Analyser le domaine de l'expediteur avec les memes heuristiques
     var senderSuspicious = senderDomain ? checkSuspiciousDomain('https://' + senderDomain, senderDomain) : null;
-    var senderStatus = senderSuspicious ? 'fail' : 'warn';
-    var senderDetail = 'Expediteur externe : ' + (senderEmail || 'inconnu');
     if (senderSuspicious) {
-      senderDetail += ' — ' + senderSuspicious.join(', ');
-    }
-    checks.push({
-      id: 'sender',
-      label: 'Expediteur',
-      status: senderStatus,
-      detail: senderDetail
-    });
-  }
-
-  // 2. Coherence expediteur vs liens
-  var linkDomains = [];
-  for (var i = 0; i < links.length; i++) {
-    if (links[i].hrefDomain && linkDomains.indexOf(links[i].hrefDomain) === -1) {
-      linkDomains.push(links[i].hrefDomain);
-    }
-  }
-
-  if (isInternal || isTrustedDomain(senderDomain)) {
-    // Expediteur interne ou de confiance : toujours PASS
-    checks.push({
-      id: 'sender-links',
-      label: 'Coherence expediteur / liens',
-      status: 'pass',
-      detail: 'Expediteur de confiance — liens non verifies contre l\'expediteur'
-    });
-  } else {
-    // Expediteur externe non-trusted : verifier pattern phishing
-    var senderDomainLinks = linkDomains.filter(function(d) { return d === senderDomain; });
-    var senderIsSuspicious = senderDomain ? checkSuspiciousDomain('https://' + senderDomain, senderDomain) : null;
-
-    // Domaines suspects dans les liens (ni trusted, ni domaine expediteur, ET heuristique positive)
-    var suspiciousForeignDomains = linkDomains.filter(function(d) {
-      return d !== senderDomain && !isTrustedDomain(d) && checkSuspiciousDomain('https://' + d, d);
-    });
-
-    if (senderIsSuspicious && senderDomainLinks.length > 0) {
       checks.push({
-        id: 'sender-links',
-        label: 'Coherence expediteur / liens',
-        status: 'fail',
-        detail: 'Expediteur suspect (' + senderDomain + ') avec des liens vers son propre domaine — pattern de phishing'
+        id: 'sender', label: 'Expediteur', status: 'fail',
+        detail: 'Expediteur externe suspect : ' + (senderEmail || 'inconnu') + ' — ' + senderSuspicious.join(', ')
       });
-    } else if (suspiciousForeignDomains.length > 0) {
+    } else if (isTrustedDomain(senderDomain)) {
       checks.push({
-        id: 'sender-links',
-        label: 'Coherence expediteur / liens',
-        status: 'fail',
-        detail: 'Liens vers des domaines suspects : ' + suspiciousForeignDomains.join(', ')
+        id: 'sender', label: 'Expediteur', status: 'pass',
+        detail: 'Expediteur externe de confiance (' + senderDomain + ')'
       });
     } else {
       checks.push({
-        id: 'sender-links',
-        label: 'Coherence expediteur / liens',
-        status: 'pass',
-        detail: 'Aucun lien vers un domaine suspect detecte'
+        id: 'sender', label: 'Expediteur', status: 'warn',
+        detail: 'Expediteur externe : ' + (senderEmail || 'inconnu')
       });
     }
   }
 
-  // 3. Mots-cles phishing dans le sujet
+  // 2. Mots-cles phishing dans le sujet
   var subjectNorm = normalizeText(subject);
   var subjectHits = [];
   for (var s = 0; s < PHISHING_KEYWORDS_SUBJECT.length; s++) {
@@ -313,21 +277,17 @@ function checkIntegrity(senderEmail, subject, html, links) {
   }
   if (subjectHits.length === 0) {
     checks.push({
-      id: 'subject',
-      label: 'Sujet du mail',
-      status: 'pass',
+      id: 'subject', label: 'Sujet du mail', status: 'pass',
       detail: 'Aucun mot-cle de phishing detecte dans le sujet'
     });
   } else {
     checks.push({
-      id: 'subject',
-      label: 'Sujet du mail',
-      status: 'warn',
+      id: 'subject', label: 'Sujet du mail', status: 'warn',
       detail: 'Mot(s)-cle(s) suspect(s) : ' + subjectHits.join(', ')
     });
   }
 
-  // 4. Mots-cles phishing dans le corps
+  // 3. Formulations phishing dans le corps
   var bodyText = normalizeText(extractTextFromHtml(html));
   var bodyHits = [];
   for (var b = 0; b < PHISHING_KEYWORDS_BODY.length; b++) {
@@ -337,21 +297,24 @@ function checkIntegrity(senderEmail, subject, html, links) {
   }
   if (bodyHits.length === 0) {
     checks.push({
-      id: 'body',
-      label: 'Contenu du mail',
-      status: 'pass',
+      id: 'body', label: 'Contenu du mail', status: 'pass',
       detail: 'Aucune formulation de phishing detectee'
     });
   } else {
     checks.push({
-      id: 'body',
-      label: 'Contenu du mail',
+      id: 'body', label: 'Contenu du mail',
       status: bodyHits.length >= 2 ? 'fail' : 'warn',
       detail: 'Formulation(s) suspecte(s) : ' + bodyHits.join(' | ')
     });
   }
 
-  // 5. Domaines de destination : ne flagger que les domaines reellement suspects
+  // 4. Domaines de destination
+  var linkDomains = [];
+  for (var i = 0; i < links.length; i++) {
+    if (links[i].hrefDomain && linkDomains.indexOf(links[i].hrefDomain) === -1) {
+      linkDomains.push(links[i].hrefDomain);
+    }
+  }
   var suspectDestDomains = linkDomains.filter(function(d) {
     return !isTrustedDomain(d) && !isOrgDomain(d) && checkSuspiciousDomain('https://' + d, d);
   });
@@ -361,23 +324,17 @@ function checkIntegrity(senderEmail, subject, html, links) {
 
   if (suspectDestDomains.length > 0) {
     checks.push({
-      id: 'ext-domains',
-      label: 'Domaines de destination',
-      status: 'fail',
+      id: 'ext-domains', label: 'Domaines de destination', status: 'fail',
       detail: suspectDestDomains.length + ' domaine(s) suspect(s) : ' + suspectDestDomains.join(', ')
     });
   } else if (unknownDestDomains.length > 3) {
     checks.push({
-      id: 'ext-domains',
-      label: 'Domaines de destination',
-      status: 'warn',
+      id: 'ext-domains', label: 'Domaines de destination', status: 'warn',
       detail: unknownDestDomains.length + ' domaines externes non-repertories : ' + unknownDestDomains.join(', ')
     });
   } else {
     checks.push({
-      id: 'ext-domains',
-      label: 'Domaines de destination',
-      status: 'pass',
+      id: 'ext-domains', label: 'Domaines de destination', status: 'pass',
       detail: 'Aucun domaine suspect detecte dans les liens'
     });
   }
@@ -385,7 +342,7 @@ function checkIntegrity(senderEmail, subject, html, links) {
   return checks;
 }
 
-/* ── Extraction + comparaison des liens ──────────────────── */
+/* -- Extraction + comparaison des liens ---------------------------- */
 
 function unwrapSafeLinks(href) {
   try {
@@ -454,13 +411,12 @@ function checkLinks(html) {
   return results;
 }
 
-/* ── Analyse heuristique domaine ─────────────────────────── */
+/* -- Analyse heuristique domaine ----------------------------------- */
 
 function isTrustedDomain(domain) {
   if (!domain) return false;
   for (var i = 0; i < TRUSTED_DOMAINS.length; i++) {
     if (domain === TRUSTED_DOMAINS[i]) return true;
-    // Sous-domaines : mail.odoo.com → match odoo.com
     if (domain.length > TRUSTED_DOMAINS[i].length &&
         domain.indexOf('.' + TRUSTED_DOMAINS[i]) === domain.length - TRUSTED_DOMAINS[i].length - 1) return true;
   }
@@ -495,8 +451,6 @@ function checkSuspiciousDomain(href, domain) {
     }
   }
 
-  // Tracking IDs : seulement si le domaine a deja un autre signal suspect
-  // Un UUID/tracking seul dans un domaine propre n'est pas suspect
   if (reasons.length > 0) {
     try {
       var u = new URL(href.indexOf('://') === -1 ? 'https://' + href : href);
@@ -510,7 +464,7 @@ function checkSuspiciousDomain(href, domain) {
   return reasons.length > 0 ? reasons : null;
 }
 
-/* ── Helpers ──────────────────────────────────────────────── */
+/* -- Helpers ------------------------------------------------------- */
 
 function getDomain(raw) {
   try {
@@ -519,14 +473,6 @@ function getDomain(raw) {
     var h = new URL(s).hostname.toLowerCase().replace(/^www\./, '');
     var p = h.split('.');
     return p.length < 2 ? h : p.slice(-2).join('.');
-  } catch(e) { return ''; }
-}
-
-function getFullHostname(raw) {
-  try {
-    var s = raw.trim();
-    if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
-    return new URL(s).hostname.toLowerCase().replace(/^www\./, '');
   } catch(e) { return ''; }
 }
 
@@ -562,7 +508,7 @@ function extractTextFromHtml(html) {
   } catch(e) { return ''; }
 }
 
-/* ── Rendu : Integrite ───────────────────────────────────── */
+/* -- Rendu : Integrite --------------------------------------------- */
 
 function renderIntegrity(checks) {
   var h = '';
@@ -580,7 +526,7 @@ function renderIntegrity(checks) {
   document.getElementById('integrity').innerHTML = h;
 }
 
-/* ── Rendu : Liens ───────────────────────────────────────── */
+/* -- Rendu : Liens ------------------------------------------------- */
 
 function renderLinks(links) {
   var mm = links.filter(function(l){ return l.mismatch; });
@@ -607,7 +553,7 @@ function renderLinks(links) {
       h += '<div class="url" style="color:#0078d4;font-style:italic">&#128737; URL deballee depuis SafeLinks</div>';
     }
     if (l.isMismatch) {
-      h += '<div class="real">&9888; ' + esc(l.reason) + '</div>';
+      h += '<div class="real">&#9888; ' + esc(l.reason) + '</div>';
       h += '<span class="tag ko">MISMATCH</span>';
     } else if (l.isSuspicious) {
       for (var w = 0; w < l.warnings.length; w++) {
@@ -622,31 +568,90 @@ function renderLinks(links) {
   document.getElementById('list').innerHTML = h;
 }
 
-/* ── Banniere globale ────────────────────────────────────── */
+/* -- Scoring et banniere ------------------------------------------- */
 
-function renderGlobalBanner(integrity, links) {
-  var failCount = 0;
-  var warnCount = 0;
+/*  Score de confiance sur 100 (deductions depuis 100)
+    -------------------------------------------------------
+    Expediteur externe non-trusted :          -5
+    Expediteur externe suspect :             -25
+    Mot-cle phishing sujet (warn) :          -5
+    Formulation phishing corps (warn) :     -10
+    Formulation phishing corps (fail) :     -25
+    Domaine destination suspect (fail) :    -25
+    Domaines inconnus > 3 (warn) :           -5
+    Lien mismatch texte/href :              -20 par lien (max -40)
+    Lien suspect heuristique :              -10 par lien (max -30)
+    -------------------------------------------------------  */
+
+function computeScore(integrity, links) {
+  var score = 100;
 
   for (var i = 0; i < integrity.length; i++) {
-    if (integrity[i].status === 'fail') failCount++;
-    if (integrity[i].status === 'warn') warnCount++;
+    var c = integrity[i];
+    switch (c.id) {
+      case 'sender':
+        if (c.status === 'fail') score -= 25;
+        else if (c.status === 'warn') score -= 5;
+        break;
+      case 'subject':
+        if (c.status === 'warn') score -= 5;
+        break;
+      case 'body':
+        if (c.status === 'fail') score -= 25;
+        else if (c.status === 'warn') score -= 10;
+        break;
+      case 'ext-domains':
+        if (c.status === 'fail') score -= 25;
+        else if (c.status === 'warn') score -= 5;
+        break;
+    }
   }
 
-  var linkFlags = links.filter(function(l){ return l.mismatch; }).length;
-  failCount += linkFlags;
+  var mismatchPenalty = 0;
+  var suspectPenalty = 0;
+  for (var j = 0; j < links.length; j++) {
+    if (links[j].isMismatch) mismatchPenalty += 20;
+    else if (links[j].isSuspicious) suspectPenalty += 10;
+  }
+  score -= Math.min(40, mismatchPenalty);
+  score -= Math.min(30, suspectPenalty);
 
-  if (failCount > 0) {
-    var total = failCount + warnCount;
-    setBanner('ko', '&#128680;', total + ' alerte(s) detectee(s)',
-      'Ce mail presente des signaux de phishing potentiel');
-  } else if (warnCount > 0) {
-    setBanner('warn', '&#9888;', warnCount + ' point(s) d\'attention',
-      'Certains elements meritent votre vigilance');
+  return Math.max(0, Math.min(100, score));
+}
+
+function renderScore(integrity, links) {
+  var score = computeScore(integrity, links);
+
+  // Barre de score
+  var bar = document.getElementById('score-bar');
+  var val = document.getElementById('score-val');
+  var fill = document.getElementById('score-fill');
+  bar.style.display = 'block';
+  val.textContent = score + ' / 100';
+
+  var color;
+  if (score >= 80) { color = '#107c10'; }
+  else if (score >= 50) { color = '#d83b01'; }
+  else { color = '#a4262c'; }
+  val.style.color = color;
+  fill.style.width = score + '%';
+  fill.style.background = color;
+
+  // Banniere
+  if (score >= 80) {
+    setBanner('ok', '&#10004;', 'Confiance elevee (' + score + '/100)',
+      links.length + ' lien(s) verifie(s), integrite OK');
+  } else if (score >= 50) {
+    var warnCount = 0;
+    for (var i = 0; i < integrity.length; i++) {
+      if (integrity[i].status !== 'pass') warnCount++;
+    }
+    warnCount += links.filter(function(l){ return l.mismatch; }).length;
+    setBanner('warn', '&#9888;', 'Vigilance recommandee (' + score + '/100)',
+      warnCount + ' point(s) d\'attention detecte(s)');
   } else {
-    var okLinks = links.length;
-    setBanner('ok', '&#10004;', 'Aucune anomalie detectee',
-      okLinks + ' lien(s) verifie(s), integrite OK');
+    setBanner('ko', '&#128680;', 'Risque eleve (' + score + '/100)',
+      'Ce mail presente des signaux de phishing potentiel');
   }
 }
 
