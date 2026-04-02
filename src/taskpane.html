@@ -261,37 +261,46 @@ function checkIntegrity(senderEmail, subject, html, links) {
     }
   }
 
-  // Domaines dans les liens qui ne sont ni de confiance ni celui de l'expediteur
-  var foreignDomains = linkDomains.filter(function(d) {
-    return d !== senderDomain && !isTrustedDomain(d);
-  });
-
-  // Pattern phishing : expediteur externe suspect + liens vers son propre domaine non-trusted
-  var senderDomainLinks = linkDomains.filter(function(d) { return d === senderDomain; });
-  var senderIsSuspicious = senderDomain ? checkSuspiciousDomain('https://' + senderDomain, senderDomain) : null;
-  var isPhishingPattern = !isInternal && !isTrustedDomain(senderDomain) && senderDomainLinks.length > 0 && senderIsSuspicious;
-
-  if (isPhishingPattern) {
-    checks.push({
-      id: 'sender-links',
-      label: 'Coherence expediteur / liens',
-      status: 'fail',
-      detail: 'Expediteur suspect (' + senderDomain + ') avec des liens vers son propre domaine — pattern de phishing'
-    });
-  } else if (foreignDomains.length > 0) {
-    checks.push({
-      id: 'sender-links',
-      label: 'Coherence expediteur / liens',
-      status: 'fail',
-      detail: 'Liens vers des domaines etrangers a l\'expediteur : ' + foreignDomains.join(', ')
-    });
-  } else {
+  if (isInternal || isTrustedDomain(senderDomain)) {
+    // Expediteur interne ou de confiance : toujours PASS
     checks.push({
       id: 'sender-links',
       label: 'Coherence expediteur / liens',
       status: 'pass',
-      detail: 'Les liens correspondent au domaine de l\'expediteur ou a des domaines de confiance'
+      detail: 'Expediteur de confiance — liens non verifies contre l\'expediteur'
     });
+  } else {
+    // Expediteur externe non-trusted : verifier pattern phishing
+    var senderDomainLinks = linkDomains.filter(function(d) { return d === senderDomain; });
+    var senderIsSuspicious = senderDomain ? checkSuspiciousDomain('https://' + senderDomain, senderDomain) : null;
+
+    // Domaines suspects dans les liens (ni trusted, ni domaine expediteur, ET heuristique positive)
+    var suspiciousForeignDomains = linkDomains.filter(function(d) {
+      return d !== senderDomain && !isTrustedDomain(d) && checkSuspiciousDomain('https://' + d, d);
+    });
+
+    if (senderIsSuspicious && senderDomainLinks.length > 0) {
+      checks.push({
+        id: 'sender-links',
+        label: 'Coherence expediteur / liens',
+        status: 'fail',
+        detail: 'Expediteur suspect (' + senderDomain + ') avec des liens vers son propre domaine — pattern de phishing'
+      });
+    } else if (suspiciousForeignDomains.length > 0) {
+      checks.push({
+        id: 'sender-links',
+        label: 'Coherence expediteur / liens',
+        status: 'fail',
+        detail: 'Liens vers des domaines suspects : ' + suspiciousForeignDomains.join(', ')
+      });
+    } else {
+      checks.push({
+        id: 'sender-links',
+        label: 'Coherence expediteur / liens',
+        status: 'pass',
+        detail: 'Aucun lien vers un domaine suspect detecte'
+      });
+    }
   }
 
   // 3. Mots-cles phishing dans le sujet
@@ -342,28 +351,34 @@ function checkIntegrity(senderEmail, subject, html, links) {
     });
   }
 
-  // 5. Nombre de domaines externes uniques dans les liens
-  var externalDomains = linkDomains.filter(function(d) { return !isTrustedDomain(d); });
-  if (externalDomains.length === 0) {
+  // 5. Domaines de destination : ne flagger que les domaines reellement suspects
+  var suspectDestDomains = linkDomains.filter(function(d) {
+    return !isTrustedDomain(d) && !isOrgDomain(d) && checkSuspiciousDomain('https://' + d, d);
+  });
+  var unknownDestDomains = linkDomains.filter(function(d) {
+    return !isTrustedDomain(d) && !isOrgDomain(d) && !checkSuspiciousDomain('https://' + d, d);
+  });
+
+  if (suspectDestDomains.length > 0) {
     checks.push({
       id: 'ext-domains',
       label: 'Domaines de destination',
-      status: 'pass',
-      detail: 'Tous les liens pointent vers des domaines de confiance'
+      status: 'fail',
+      detail: suspectDestDomains.length + ' domaine(s) suspect(s) : ' + suspectDestDomains.join(', ')
     });
-  } else if (externalDomains.length <= 2) {
+  } else if (unknownDestDomains.length > 3) {
     checks.push({
       id: 'ext-domains',
       label: 'Domaines de destination',
       status: 'warn',
-      detail: externalDomains.length + ' domaine(s) externe(s) : ' + externalDomains.join(', ')
+      detail: unknownDestDomains.length + ' domaines externes non-repertories : ' + unknownDestDomains.join(', ')
     });
   } else {
     checks.push({
       id: 'ext-domains',
       label: 'Domaines de destination',
-      status: 'fail',
-      detail: externalDomains.length + ' domaines externes differents (inhabituel) : ' + externalDomains.join(', ')
+      status: 'pass',
+      detail: 'Aucun domaine suspect detecte dans les liens'
     });
   }
 
@@ -442,8 +457,12 @@ function checkLinks(html) {
 /* ── Analyse heuristique domaine ─────────────────────────── */
 
 function isTrustedDomain(domain) {
+  if (!domain) return false;
   for (var i = 0; i < TRUSTED_DOMAINS.length; i++) {
     if (domain === TRUSTED_DOMAINS[i]) return true;
+    // Sous-domaines : mail.odoo.com → match odoo.com
+    if (domain.length > TRUSTED_DOMAINS[i].length &&
+        domain.indexOf('.' + TRUSTED_DOMAINS[i]) === domain.length - TRUSTED_DOMAINS[i].length - 1) return true;
   }
   return false;
 }
@@ -476,13 +495,17 @@ function checkSuspiciousDomain(href, domain) {
     }
   }
 
-  try {
-    var u = new URL(href.indexOf('://') === -1 ? 'https://' + href : href);
-    var path = u.pathname + u.search;
-    if (/[a-f0-9\-]{24,}/i.test(path)) {
-      reasons.push('URL contient des identifiants de tracking suspects');
-    }
-  } catch(e) {}
+  // Tracking IDs : seulement si le domaine a deja un autre signal suspect
+  // Un UUID/tracking seul dans un domaine propre n'est pas suspect
+  if (reasons.length > 0) {
+    try {
+      var u = new URL(href.indexOf('://') === -1 ? 'https://' + href : href);
+      var path = u.pathname + u.search;
+      if (/[a-f0-9\-]{32,}/i.test(path)) {
+        reasons.push('URL contient des identifiants de tracking suspects');
+      }
+    } catch(e) {}
+  }
 
   return reasons.length > 0 ? reasons : null;
 }
