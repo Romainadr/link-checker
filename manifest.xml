@@ -6,7 +6,7 @@
   xsi:type="MailApp">
 
   <Id>73cbd09c-f705-4278-af6c-dd949a310e28</Id>
-  <Version>1.0.0.7</Version>
+  <Version>1.0.0.8</Version>
   <ProviderName>EMPIRYS</ProviderName>
   <DefaultLocale>fr-FR</DefaultLocale>
   <DisplayName DefaultValue="Link Checker"/>
@@ -26,7 +26,7 @@
 
   <Requirements>
     <Sets>
-      <Set Name="Mailbox" MinVersion="1.3"/>
+      <Set Name="Mailbox" MinVersion="1.1"/>
     </Sets>
   </Requirements>
 
@@ -45,7 +45,7 @@
     <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
   </Rule>
 
-  <!-- V1_0 : clients legacy -->
+  <!-- V1_0 : clients Outlook classique -->
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
     <Requirements>
       <bt:Sets DefaultMinVersion="1.3">
@@ -100,10 +100,11 @@
       </bt:LongStrings>
     </Resources>
 
-    <!-- V1_1 : Nouvel Outlook / OWA — IDs prefixes "lc." pour eviter les conflits avec V1_0 -->
+    <!-- V1_1 imbrique : active SupportsPinning pour OWA / Nouvel Outlook -->
+    <!-- IDs prefixes lc. pour eviter tout conflit avec le bloc V1_0 ci-dessus -->
     <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
       <Requirements>
-        <bt:Sets DefaultMinVersion="1.10">
+        <bt:Sets DefaultMinVersion="1.5">
           <bt:Set Name="Mailbox"/>
         </bt:Sets>
       </Requirements>
@@ -111,16 +112,6 @@
         <Host xsi:type="MailHost">
           <DesktopFormFactor>
             <FunctionFile resid="lc.Cmd.Url"/>
-
-            <!-- Declenchement automatique a l'ouverture d'un email -->
-            <ExtensionPoint xsi:type="LaunchEvent">
-              <LaunchEvents>
-                <LaunchEvent Type="OnMessageRead" FunctionName="onMessageRead"/>
-              </LaunchEvents>
-              <SourceLocation resid="lc.Cmd.Url"/>
-            </ExtensionPoint>
-
-            <!-- Bouton ruban avec epinglage -->
             <ExtensionPoint xsi:type="MessageReadCommandSurface">
               <OfficeTab id="TabDefault">
                 <Group id="lc.grp1">
