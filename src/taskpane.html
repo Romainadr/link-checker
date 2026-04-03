@@ -26,7 +26,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 #btn{display:block;width:calc(100% - 28px);margin:8px 14px;padding:6px;background:#0078d4;color:#fff;border:none;border-radius:2px;cursor:pointer;font:500 13px 'Segoe UI',sans-serif}
 #btn:hover{background:#106ebe}
 #btn:disabled{background:#c8c6c4;cursor:default}
-
 .score-bar{padding:8px 14px;display:none}
 .score-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 .score-label{font-size:11px;font-weight:600;color:#605e5c}
@@ -641,7 +640,9 @@ function renderScore(integrity, links) {
   fill.style.width = score + '%';
   fill.style.background = color;
 
-  // Banniere
+  var mismatchCount = links.filter(function(l){ return l.mismatch; }).length;
+
+  // Banniere dans le panneau
   if (score >= 80) {
     setBanner('ok', '&#10004;', 'Confiance élevée (' + score + '/100)',
       links.length + ' lien(s) verifie(s), integrite OK');
@@ -650,13 +651,46 @@ function renderScore(integrity, links) {
     for (var i = 0; i < integrity.length; i++) {
       if (integrity[i].status !== 'pass') warnCount++;
     }
-    warnCount += links.filter(function(l){ return l.mismatch; }).length;
+    warnCount += mismatchCount;
     setBanner('warn', '&#9888;', 'Vigilance recommandee (' + score + '/100)',
       warnCount + ' point(s) d\'attention detecte(s)');
   } else {
     setBanner('ko', '&#128680;', 'Risque eleve (' + score + '/100)',
       'Ce mail presente des signaux de phishing potentiel');
   }
+
+  // Notification dans le mail (banniere Outlook native)
+  try {
+    var item = Office.context.mailbox.item;
+    if (item && item.notificationMessages) {
+      var notif;
+      if (score >= 80) {
+        var m80 = '\u2713 Link Checker : Confiance elevee (' + score + '/100) \u2014 ' + links.length + ' lien(s) OK';
+        notif = {
+          type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
+          icon: 'Icon.16',
+          message: m80.substring(0, 150),
+          persistent: false
+        };
+      } else if (score >= 50) {
+        var m50 = '\u26a0 Link Checker : Vigilance recommandee (' + score + '/100) \u2014 ' + mismatchCount + ' suspect(s)';
+        notif = {
+          type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
+          icon: 'Icon.16',
+          message: m50.substring(0, 150),
+          persistent: false
+        };
+      } else {
+        var mKo = 'Link Checker : RISQUE ELEVE (' + score + '/100) \u2014 Phishing potentiel detecte';
+        notif = {
+          type: Office.MailboxEnums.ItemNotificationMessageType.ErrorMessage,
+          message: mKo.substring(0, 150),
+          persistent: true
+        };
+      }
+      item.notificationMessages.replaceAsync('lc-score', notif, function() {});
+    }
+  } catch(e) {}
 }
 
 function setBanner(cls, icon, msg, sub) {
