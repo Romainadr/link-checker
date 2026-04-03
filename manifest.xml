@@ -119,6 +119,7 @@
               <LaunchEvents>
                 <LaunchEvent Type="OnMessageRead" FunctionName="onMessageRead"/>
               </LaunchEvents>
+              <SourceLocation resid="Cmd.Url"/>
             </ExtensionPoint>
 
             <!-- Bouton ruban (toujours disponible pour voir le détail) -->
