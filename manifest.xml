@@ -3,11 +3,10 @@
   xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
-  xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides"
   xsi:type="MailApp">
 
   <Id>73cbd09c-f705-4278-af6c-dd949a310e28</Id>
-  <Version>1.0.0.5</Version>
+  <Version>1.0.0.6</Version>
   <ProviderName>EMPIRYS</ProviderName>
   <DefaultLocale>fr-FR</DefaultLocale>
   <DisplayName DefaultValue="Link Checker"/>
@@ -19,7 +18,6 @@
 
   <AppDomains>
     <AppDomain>https://romainadr.github.io</AppDomain>
-    <AppDomain>https://empirys.com</AppDomain>
   </AppDomains>
 
   <Hosts>
@@ -47,34 +45,45 @@
     <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
   </Rule>
 
-  <!-- VersionOverrides V1_0 : clients legacy (bouton ruban) -->
-  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+  <!-- VersionOverrides V1_1 : bouton ruban + activation evenementielle automatique -->
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
     <Requirements>
-      <bt:Sets DefaultMinVersion="1.3">
+      <bt:Sets DefaultMinVersion="1.10">
         <bt:Set Name="Mailbox"/>
       </bt:Sets>
     </Requirements>
     <Hosts>
       <Host xsi:type="MailHost">
         <DesktopFormFactor>
-          <FunctionFile resid="Cmd.Url"/>
+          <FunctionFile resid="LC.Cmd.Url"/>
+
+          <!-- Declenchement automatique a l'ouverture d'un email -->
+          <ExtensionPoint xsi:type="LaunchEvent">
+            <LaunchEvents>
+              <LaunchEvent Type="OnMessageRead" FunctionName="onMessageRead"/>
+            </LaunchEvents>
+            <SourceLocation resid="LC.Cmd.Url"/>
+          </ExtensionPoint>
+
+          <!-- Bouton ruban pour voir le detail -->
           <ExtensionPoint xsi:type="MessageReadCommandSurface">
             <OfficeTab id="TabDefault">
-              <Group id="grp1">
-                <Label resid="Grp.Label"/>
-                <Control xsi:type="Button" id="btn1">
-                  <Label resid="Btn.Label"/>
+              <Group id="lc.grp1">
+                <Label resid="LC.Grp.Label"/>
+                <Control xsi:type="Button" id="lc.btn1">
+                  <Label resid="LC.Btn.Label"/>
                   <Supertip>
-                    <Title resid="Btn.Label"/>
-                    <Description resid="Btn.Tip"/>
+                    <Title resid="LC.Btn.Label"/>
+                    <Description resid="LC.Btn.Tip"/>
                   </Supertip>
                   <Icon>
-                    <bt:Image size="16" resid="Icon.16"/>
-                    <bt:Image size="32" resid="Icon.32"/>
-                    <bt:Image size="80" resid="Icon.80"/>
+                    <bt:Image size="16" resid="LC.Icon.16"/>
+                    <bt:Image size="32" resid="LC.Icon.32"/>
+                    <bt:Image size="80" resid="LC.Icon.80"/>
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
-                    <SourceLocation resid="Taskpane.Url"/>
+                    <SourceLocation resid="LC.Taskpane.Url"/>
+                    <SupportsPinning>true</SupportsPinning>
                   </Action>
                 </Control>
               </Group>
@@ -85,89 +94,22 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16" DefaultValue="https://romainadr.github.io/link-checker/icon-16.png"/>
-        <bt:Image id="Icon.32" DefaultValue="https://romainadr.github.io/link-checker/icon-32.png"/>
-        <bt:Image id="Icon.80" DefaultValue="https://romainadr.github.io/link-checker/icon-80.png"/>
+        <bt:Image id="LC.Icon.16" DefaultValue="https://romainadr.github.io/link-checker/icon-16.png"/>
+        <bt:Image id="LC.Icon.32" DefaultValue="https://romainadr.github.io/link-checker/icon-32.png"/>
+        <bt:Image id="LC.Icon.80" DefaultValue="https://romainadr.github.io/link-checker/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Cmd.Url" DefaultValue="https://romainadr.github.io/link-checker/src/commands.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://romainadr.github.io/link-checker/src/taskpane.html"/>
+        <bt:Url id="LC.Cmd.Url" DefaultValue="https://romainadr.github.io/link-checker/src/commands.html"/>
+        <bt:Url id="LC.Taskpane.Url" DefaultValue="https://romainadr.github.io/link-checker/src/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="Grp.Label" DefaultValue="Link Checker"/>
-        <bt:String id="Btn.Label" DefaultValue="Verifier les liens"/>
+        <bt:String id="LC.Grp.Label" DefaultValue="Link Checker"/>
+        <bt:String id="LC.Btn.Label" DefaultValue="Verifier les liens"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="Btn.Tip" DefaultValue="Verifie si les URLs reelles correspondent au texte affiche."/>
+        <bt:String id="LC.Btn.Tip" DefaultValue="Verifie si les URLs reelles correspondent au texte affiche."/>
       </bt:LongStrings>
     </Resources>
-
-    <!-- VersionOverrides V1_1 : Nouvel Outlook / OWA — activation evenementielle automatique -->
-    <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
-      <Requirements>
-        <bt:Sets DefaultMinVersion="1.10">
-          <bt:Set Name="Mailbox"/>
-        </bt:Sets>
-      </Requirements>
-      <Hosts>
-        <Host xsi:type="MailHost">
-          <DesktopFormFactor>
-            <FunctionFile resid="Cmd.Url"/>
-
-            <!-- Déclenchement automatique à l'ouverture d'un email -->
-            <ExtensionPoint xsi:type="LaunchEvent">
-              <LaunchEvents>
-                <LaunchEvent Type="OnMessageRead" FunctionName="onMessageRead"/>
-              </LaunchEvents>
-              <SourceLocation resid="Cmd.Url"/>
-            </ExtensionPoint>
-
-            <!-- Bouton ruban (toujours disponible pour voir le détail) -->
-            <ExtensionPoint xsi:type="MessageReadCommandSurface">
-              <OfficeTab id="TabDefault">
-                <Group id="grp1">
-                  <Label resid="Grp.Label"/>
-                  <Control xsi:type="Button" id="btn1">
-                    <Label resid="Btn.Label"/>
-                    <Supertip>
-                      <Title resid="Btn.Label"/>
-                      <Description resid="Btn.Tip"/>
-                    </Supertip>
-                    <Icon>
-                      <bt:Image size="16" resid="Icon.16"/>
-                      <bt:Image size="32" resid="Icon.32"/>
-                      <bt:Image size="80" resid="Icon.80"/>
-                    </Icon>
-                    <Action xsi:type="ShowTaskpane">
-                      <SourceLocation resid="Taskpane.Url"/>
-                      <SupportsPinning>true</SupportsPinning>
-                    </Action>
-                  </Control>
-                </Group>
-              </OfficeTab>
-            </ExtensionPoint>
-          </DesktopFormFactor>
-        </Host>
-      </Hosts>
-      <Resources>
-        <bt:Images>
-          <bt:Image id="Icon.16" DefaultValue="https://romainadr.github.io/link-checker/icon-16.png"/>
-          <bt:Image id="Icon.32" DefaultValue="https://romainadr.github.io/link-checker/icon-32.png"/>
-          <bt:Image id="Icon.80" DefaultValue="https://romainadr.github.io/link-checker/icon-80.png"/>
-        </bt:Images>
-        <bt:Urls>
-          <bt:Url id="Cmd.Url" DefaultValue="https://romainadr.github.io/link-checker/src/commands.html"/>
-          <bt:Url id="Taskpane.Url" DefaultValue="https://romainadr.github.io/link-checker/src/taskpane.html"/>
-        </bt:Urls>
-        <bt:ShortStrings>
-          <bt:String id="Grp.Label" DefaultValue="Link Checker"/>
-          <bt:String id="Btn.Label" DefaultValue="Verifier les liens"/>
-        </bt:ShortStrings>
-        <bt:LongStrings>
-          <bt:String id="Btn.Tip" DefaultValue="Verifie si les URLs reelles correspondent au texte affiche."/>
-        </bt:LongStrings>
-      </Resources>
-    </VersionOverrides>
-
   </VersionOverrides>
+
 </OfficeApp>
