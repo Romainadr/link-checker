@@ -143,9 +143,15 @@
                 <Control xsi:type="MobileButton" id="lc.mob.btn1">
                   <Label resid="lc.Btn.Label"/>
                   <Icon>
-                    <bt:Image size="25" resid="lc.Icon.25"/>
-                    <bt:Image size="32" resid="lc.Icon.32"/>
-                    <bt:Image size="48" resid="lc.Icon.48"/>
+                    <bt:Image size="25" scale="1" resid="lc.Icon.25"/>
+                    <bt:Image size="25" scale="2" resid="lc.Icon.50"/>
+                    <bt:Image size="25" scale="3" resid="lc.Icon.75"/>
+                    <bt:Image size="32" scale="1" resid="lc.Icon.32"/>
+                    <bt:Image size="32" scale="2" resid="lc.Icon.64"/>
+                    <bt:Image size="32" scale="3" resid="lc.Icon.96"/>
+                    <bt:Image size="48" scale="1" resid="lc.Icon.48"/>
+                    <bt:Image size="48" scale="2" resid="lc.Icon.96"/>
+                    <bt:Image size="48" scale="3" resid="lc.Icon.144"/>
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
                     <SourceLocation resid="lc.Taskpane.Url"/>
@@ -162,7 +168,12 @@
           <bt:Image id="lc.Icon.25" DefaultValue="https://romainadr.github.io/link-checker/icon-25.png"/>
           <bt:Image id="lc.Icon.32" DefaultValue="https://romainadr.github.io/link-checker/icon-32.png"/>
           <bt:Image id="lc.Icon.48" DefaultValue="https://romainadr.github.io/link-checker/icon-48.png"/>
+          <bt:Image id="lc.Icon.50" DefaultValue="https://romainadr.github.io/link-checker/icon-50.png"/>
+          <bt:Image id="lc.Icon.64" DefaultValue="https://romainadr.github.io/link-checker/icon-64.png"/>
+          <bt:Image id="lc.Icon.75" DefaultValue="https://romainadr.github.io/link-checker/icon-75.png"/>
           <bt:Image id="lc.Icon.80" DefaultValue="https://romainadr.github.io/link-checker/icon-80.png"/>
+          <bt:Image id="lc.Icon.96" DefaultValue="https://romainadr.github.io/link-checker/icon-96.png"/>
+          <bt:Image id="lc.Icon.144" DefaultValue="https://romainadr.github.io/link-checker/icon-144.png"/>
         </bt:Images>
         <bt:Urls>
           <bt:Url id="lc.Cmd.Url" DefaultValue="https://romainadr.github.io/link-checker/src/commands.html"/>
