@@ -649,7 +649,7 @@ function renderScore(integrity, links) {
 
   // Banniere par palier
   if (score > 90) {
-    setBanner('ok', '&#10004;', 'Confiance elevee (' + score + '/100)',
+    setBanner('ok', '&#10004;', 'Confiance élevée (' + score + '/100)',
       links.length + ' lien(s) verifie(s), integrite OK');
   } else if (score >= 75) {
     setBanner('good', '&#10004;', 'Confiance correcte (' + score + '/100)',
@@ -660,10 +660,10 @@ function renderScore(integrity, links) {
       if (integrity[i].status !== 'pass') warnCount++;
     }
     warnCount += mismatchCount;
-    setBanner('warn', '&#9888;', 'Vigilance recommandee (' + score + '/100)',
+    setBanner('warn', '&#9888;', 'Vigilance recommandée (' + score + '/100)',
       warnCount + ' point(s) d\'attention detecte(s)');
   } else if (score >= 25) {
-    setBanner('ko', '&#128680;', 'Risque eleve (' + score + '/100)',
+    setBanner('ko', '&#128680;', 'Risque élevé (' + score + '/100)',
       'Ce mail presente des signaux de phishing potentiel');
   } else {
     setBanner('danger', '&#128680;', 'Risque critique (' + score + '/100)',
@@ -685,14 +685,14 @@ function setMailNotification(score, totalLinks, suspectLinks) {
   var persistent = false;
 
   if (score > 90) {
-    msg = 'Link Checker : Confiance elevee (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
+    msg = 'Link Checker : Confiance élevée (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 75) {
     msg = 'Link Checker : Confiance correcte (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 50) {
-    msg = 'Link Checker : Vigilance recommandee (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s)';
+    msg = 'Link Checker : Vigilance recommandée (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s)';
     persistent = true;
   } else if (score >= 25) {
-    msg = 'Link Checker : Risque eleve (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s) detecte(s)';
+    msg = 'Link Checker : Risque élevé (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s) detecte(s)';
     persistent = true;
   } else {
     msg = 'Link Checker : RISQUE CRITIQUE (' + score + '/100) — Ce mail presente de forts signaux de phishing';
