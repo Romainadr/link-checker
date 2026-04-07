@@ -685,17 +685,17 @@ function setMailNotification(score, totalLinks, suspectLinks) {
   var persistent = false;
 
   if (score > 90) {
-    msg = 'Link Checker : Confiance élevée (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
+    msg = 'Link Checker : Confiance élevée - ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 75) {
-    msg = 'Link Checker : Confiance correcte (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
+    msg = 'Link Checker : Confiance correcte - ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 50) {
-    msg = 'Link Checker : Vigilance recommandée (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s)';
+    msg = 'Link Checker : Vigilance recommandée - ' + suspectLinks + ' lien(s) suspect(s)';
     persistent = true;
   } else if (score >= 25) {
-    msg = 'Link Checker : Risque élevé (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s) detecte(s)';
+    msg = 'Link Checker : Risque élevé - ' + suspectLinks + ' lien(s) suspect(s) detecte(s)';
     persistent = true;
   } else {
-    msg = 'Link Checker : RISQUE CRITIQUE (' + score + '/100) — Ce mail presente de forts signaux de phishing';
+    msg = 'Link Checker : RISQUE CRITIQUE - Ce mail presente de forts signaux de phishing';
     persistent = true;
   }
 
