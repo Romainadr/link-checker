@@ -6,7 +6,7 @@
   xsi:type="MailApp">
 
   <Id>73cbd09c-f705-4278-af6c-dd949a310e28</Id>
-  <Version>1.0.0.8</Version>
+  <Version>1.0.0.9</Version>
   <ProviderName>EMPIRYS</ProviderName>
   <DefaultLocale>fr-FR</DefaultLocale>
   <DisplayName DefaultValue="Link Checker"/>
@@ -136,12 +136,32 @@
               </OfficeTab>
             </ExtensionPoint>
           </DesktopFormFactor>
+          <MobileFormFactor>
+            <ExtensionPoint xsi:type="MobileMessageReadCommandSurface">
+              <Group id="lc.mob.grp1">
+                <Label resid="lc.Grp.Label"/>
+                <Control xsi:type="MobileButton" id="lc.mob.btn1">
+                  <Label resid="lc.Btn.Label"/>
+                  <Icon>
+                    <bt:Image size="25" resid="lc.Icon.25"/>
+                    <bt:Image size="32" resid="lc.Icon.32"/>
+                    <bt:Image size="48" resid="lc.Icon.48"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <SourceLocation resid="lc.Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </ExtensionPoint>
+          </MobileFormFactor>
         </Host>
       </Hosts>
       <Resources>
         <bt:Images>
           <bt:Image id="lc.Icon.16" DefaultValue="https://romainadr.github.io/link-checker/icon-16.png"/>
+          <bt:Image id="lc.Icon.25" DefaultValue="https://romainadr.github.io/link-checker/icon-25.png"/>
           <bt:Image id="lc.Icon.32" DefaultValue="https://romainadr.github.io/link-checker/icon-32.png"/>
+          <bt:Image id="lc.Icon.48" DefaultValue="https://romainadr.github.io/link-checker/icon-48.png"/>
           <bt:Image id="lc.Icon.80" DefaultValue="https://romainadr.github.io/link-checker/icon-80.png"/>
         </bt:Images>
         <bt:Urls>

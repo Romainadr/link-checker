@@ -676,14 +676,12 @@ function renderScore(integrity, links) {
 
 function setMailNotification(score, totalLinks, suspectLinks) {
   var item = Office.context.mailbox.item;
-  if (!item || !item.notificationMessages) return;
-
-  // Supprimer l'ancienne notification si elle existe
-  try { item.notificationMessages.removeAsync('linkchecker'); } catch(e) {}
+  if (!item || !item.notificationMessages) {
+    console.log('[LinkChecker] notificationMessages non disponible');
+    return;
+  }
 
   var msg = '';
-  var type = Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage;
-  var icon = 'Icon.16';
   var persistent = false;
 
   if (score > 90) {
@@ -701,13 +699,35 @@ function setMailNotification(score, totalLinks, suspectLinks) {
     persistent = true;
   }
 
-  item.notificationMessages.addAsync('linkchecker', {
-    type: type,
+  // Determiner l'icon resource ID selon le VersionOverrides actif
+  var iconId = 'lc.Icon.16';
+
+  var notifDetails = {
+    type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
     message: msg,
-    icon: 'lc.Icon.16',
+    icon: iconId,
     persistent: persistent
-  }, function(result) {
-    // Silencieux en cas d'echec (certains clients ne supportent pas)
+  };
+
+  // Supprimer l'ancienne notification AVANT d'ajouter la nouvelle (chaining async)
+  item.notificationMessages.removeAsync('linkchecker', function(removeResult) {
+    // removeAsync peut echouer si la notif n'existe pas encore — on ignore
+    item.notificationMessages.addAsync('linkchecker', notifDetails, function(addResult) {
+      if (addResult.status === Office.AsyncResultStatus.Failed) {
+        console.log('[LinkChecker] Notification echouee: ' + addResult.error.message);
+        // Fallback : essayer avec l'icon V1_0
+        notifDetails.icon = 'Icon.16';
+        item.notificationMessages.addAsync('linkchecker_fb', notifDetails, function(fbResult) {
+          if (fbResult.status === Office.AsyncResultStatus.Failed) {
+            console.log('[LinkChecker] Notification fallback echouee: ' + fbResult.error.message);
+          } else {
+            console.log('[LinkChecker] Notification OK (fallback icon)');
+          }
+        });
+      } else {
+        console.log('[LinkChecker] Notification OK');
+      }
+    });
   });
 }
 
@@ -725,4 +745,4 @@ function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function trunc(s, n) { return s.length <= n ? s : s.slice(0, n-1) + '...'; }
 </script>
 </body>
-</html
+</html>
