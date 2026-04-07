@@ -687,7 +687,7 @@ function setMailNotification(score, totalLinks, suspectLinks) {
   if (score > 90) {
     msg = 'Link Checker : Confiance élevée - ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 75) {
-    msg = 'Link Checker : Confiance correcte - ' + totalLinks + ' lien(s) verifies';
+    msg = 'Link Checker : Confiance modérée - ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 50) {
     msg = 'Link Checker : Vigilance recommandée - ' + suspectLinks + ' lien(s) suspect(s)';
     persistent = true;
