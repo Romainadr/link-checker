@@ -669,6 +669,46 @@ function renderScore(integrity, links) {
     setBanner('danger', '&#128680;', 'Risque critique (' + score + '/100)',
       'Ce mail presente de forts signaux de phishing');
   }
+
+  // Notification dans le mail (barre en haut du message)
+  setMailNotification(score, links.length, mismatchCount);
+}
+
+function setMailNotification(score, totalLinks, suspectLinks) {
+  var item = Office.context.mailbox.item;
+  if (!item || !item.notificationMessages) return;
+
+  // Supprimer l'ancienne notification si elle existe
+  try { item.notificationMessages.removeAsync('linkchecker'); } catch(e) {}
+
+  var msg = '';
+  var type = Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage;
+  var icon = 'Icon.16';
+  var persistent = false;
+
+  if (score > 90) {
+    msg = 'Link Checker : Confiance elevee (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
+  } else if (score >= 75) {
+    msg = 'Link Checker : Confiance correcte (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
+  } else if (score >= 50) {
+    msg = 'Link Checker : Vigilance recommandee (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s)';
+    persistent = true;
+  } else if (score >= 25) {
+    msg = 'Link Checker : Risque eleve (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s) detecte(s)';
+    persistent = true;
+  } else {
+    msg = 'Link Checker : RISQUE CRITIQUE (' + score + '/100) — Ce mail presente de forts signaux de phishing';
+    persistent = true;
+  }
+
+  item.notificationMessages.addAsync('linkchecker', {
+    type: type,
+    message: msg,
+    icon: 'lc.Icon.16',
+    persistent: persistent
+  }, function(result) {
+    // Silencieux en cas d'echec (certains clients ne supportent pas)
+  });
 }
 
 function setBanner(cls, icon, msg, sub) {
