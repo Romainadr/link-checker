@@ -179,29 +179,47 @@ var BRAND_NAMES = [
   'onedrive', 'sharepoint', 'teams'
 ];
 
-var PHISHING_KEYWORDS_SUBJECT = [
+/* Keywords sujet — haute confiance : toujours significatifs */
+var SUBJECT_HIGH = [
   'urgent', 'immediate', 'action requise', 'action required',
-  'verif', 'confirm', 'suspend', 'bloqu', 'locked',
-  'mot de passe', 'password', 'expir', 'renouvel',
-  'facture', 'invoice', 'paiement', 'payment',
-  'securite', 'security', 'alerte', 'alert',
-  'compte', 'account', 'mise a jour', 'update',
-  'remboursement', 'refund', 'gagn', 'felicitation',
-  'derniere chance', 'last chance', 'limite', 'limited'
+  'suspend', 'bloqu', 'locked', 'desactiv', 'disabled',
+  'mot de passe', 'password', 'expir',
+  'derniere chance', 'last chance',
+  'acces non autorise', 'unauthorized access',
+  'gagn', 'felicitation', 'congratulation'
 ];
 
-var PHISHING_KEYWORDS_BODY = [
+/* Keywords sujet — basse confiance : frequents dans les mails legitimes,
+   ne comptent que si un autre signal est deja present */
+var SUBJECT_LOW = [
+  'verif', 'confirm', 'securite', 'security', 'alerte', 'alert',
+  'facture', 'invoice', 'paiement', 'payment',
+  'compte', 'account', 'mise a jour', 'update',
+  'remboursement', 'refund', 'renouvel', 'limite', 'limited'
+];
+
+/* Keywords corps — haute confiance : formulations typiques de phishing */
+var BODY_HIGH = [
   'cliquez ici immediatement', 'click here immediately',
   'votre compte sera', 'your account will be',
-  'dans les 24', 'within 24', 'dans les 48', 'within 48',
   'verifiez votre identite', 'verify your identity',
   'confirmer vos informations', 'confirm your information',
   'mot de passe expire', 'password expired',
   'acces non autorise', 'unauthorized access',
   'activite suspecte', 'suspicious activity',
+  'ouvrir la piece jointe', 'open the attachment',
+  'repondez immediatement', 'respond immediately',
+  'action immediate requise', 'immediate action required',
+  'sous peine de', 'failure to comply'
+];
+
+/* Keywords corps — basse confiance : courants dans les mails transactionnels */
+var BODY_LOW = [
+  'dans les 24', 'within 24', 'dans les 48', 'within 48',
   'cliquez sur le lien', 'click the link',
   'telecharger le document', 'download the document',
-  'ouvrir la piece jointe', 'open the attachment'
+  'mettre a jour vos informations', 'update your information',
+  'connectez-vous', 'log in to your account'
 ];
 
 /* -- Analyse principale -------------------------------------------- */
@@ -241,7 +259,8 @@ function run() {
     }
     var links = checkLinks(bodyHtml);
     var headerAnalysis = analyzeHeaders(mimeHeaders);
-    var integrity = checkIntegrity(senderEmail, subject, bodyHtml, links);
+    var hasSuspectLinks = links.some(function(l) { return l.mismatch; });
+    var integrity = checkIntegrity(senderEmail, subject, bodyHtml, links, hasSuspectLinks, headerAnalysis);
     renderIntegrity(integrity);
     renderHeaders(headerAnalysis);
     renderLinks(links);
@@ -269,7 +288,7 @@ function run() {
 
 /* -- Check integrite du mail --------------------------------------- */
 
-function checkIntegrity(senderEmail, subject, html, links) {
+function checkIntegrity(senderEmail, subject, html, links, hasSuspectLinks, headerAnalysis) {
   var checks = [];
   var senderDomain = getDomainFromEmail(senderEmail);
 
@@ -300,44 +319,66 @@ function checkIntegrity(senderEmail, subject, html, links) {
     }
   }
 
-  // 2. Mots-cles phishing dans le sujet
+  // 2. Mots-cles phishing dans le sujet (haute + basse confiance)
   var subjectNorm = normalizeText(subject);
-  var subjectHits = [];
-  for (var s = 0; s < PHISHING_KEYWORDS_SUBJECT.length; s++) {
-    if (subjectNorm.indexOf(PHISHING_KEYWORDS_SUBJECT[s]) !== -1) {
-      subjectHits.push(PHISHING_KEYWORDS_SUBJECT[s]);
-    }
-  }
-  if (subjectHits.length === 0) {
+  var subjectHighHits = matchKeywords(subjectNorm, SUBJECT_HIGH);
+  var subjectLowHits = matchKeywords(subjectNorm, SUBJECT_LOW);
+  // Un autre signal = expediteur non-pass, liens suspects, ou headers en echec
+  var hasOtherSignal = (checks.length > 0 && checks[0].status !== 'pass')
+    || hasSuspectLinks
+    || headerAnalysis.some(function(h) { return h.status === 'fail' || h.status === 'warn'; });
+
+  if (subjectHighHits.length > 0) {
+    checks.push({
+      id: 'subject', label: 'Sujet du mail', status: 'warn',
+      detail: 'Mot(s)-cle(s) suspect(s) : ' + subjectHighHits.join(', ')
+    });
+  } else if (subjectLowHits.length > 0 && hasOtherSignal) {
+    checks.push({
+      id: 'subject', label: 'Sujet du mail', status: 'warn',
+      detail: 'Mot(s)-cle(s) contextuellement suspect(s) : ' + subjectLowHits.join(', ')
+    });
+  } else if (subjectLowHits.length > 0) {
+    checks.push({
+      id: 'subject', label: 'Sujet du mail', status: 'pass',
+      detail: 'Mots-cles courants detectes (' + subjectLowHits.join(', ') + ') mais aucun autre signal'
+    });
+  } else {
     checks.push({
       id: 'subject', label: 'Sujet du mail', status: 'pass',
       detail: 'Aucun mot-cle de phishing detecte dans le sujet'
     });
-  } else {
-    checks.push({
-      id: 'subject', label: 'Sujet du mail', status: 'warn',
-      detail: 'Mot(s)-cle(s) suspect(s) : ' + subjectHits.join(', ')
-    });
   }
 
-  // 3. Formulations phishing dans le corps
+  // 3. Formulations phishing dans le corps (haute + basse confiance)
   var bodyText = normalizeText(extractTextFromHtml(html));
-  var bodyHits = [];
-  for (var b = 0; b < PHISHING_KEYWORDS_BODY.length; b++) {
-    if (bodyText.indexOf(PHISHING_KEYWORDS_BODY[b]) !== -1) {
-      bodyHits.push(PHISHING_KEYWORDS_BODY[b]);
-    }
-  }
-  if (bodyHits.length === 0) {
+  var bodyHighHits = matchKeywords(bodyText, BODY_HIGH);
+  var bodyLowHits = matchKeywords(bodyText, BODY_LOW);
+
+  if (bodyHighHits.length >= 2) {
+    checks.push({
+      id: 'body', label: 'Contenu du mail', status: 'fail',
+      detail: 'Formulations de phishing : ' + bodyHighHits.join(' | ')
+    });
+  } else if (bodyHighHits.length === 1) {
+    checks.push({
+      id: 'body', label: 'Contenu du mail', status: 'warn',
+      detail: 'Formulation suspecte : ' + bodyHighHits[0]
+    });
+  } else if (bodyLowHits.length > 0 && (hasOtherSignal || subjectHighHits.length > 0)) {
+    checks.push({
+      id: 'body', label: 'Contenu du mail', status: 'warn',
+      detail: 'Formulations contextuellement suspectes : ' + bodyLowHits.join(' | ')
+    });
+  } else if (bodyLowHits.length > 0) {
+    checks.push({
+      id: 'body', label: 'Contenu du mail', status: 'pass',
+      detail: 'Formulations courantes detectees mais aucun autre signal'
+    });
+  } else {
     checks.push({
       id: 'body', label: 'Contenu du mail', status: 'pass',
       detail: 'Aucune formulation de phishing detectee'
-    });
-  } else {
-    checks.push({
-      id: 'body', label: 'Contenu du mail',
-      status: bodyHits.length >= 2 ? 'fail' : 'warn',
-      detail: 'Formulation(s) suspecte(s) : ' + bodyHits.join(' | ')
     });
   }
 
@@ -634,6 +675,14 @@ function checkSuspiciousDomain(href, domain) {
 }
 
 /* -- Helpers ------------------------------------------------------- */
+
+function matchKeywords(text, keywords) {
+  var hits = [];
+  for (var i = 0; i < keywords.length; i++) {
+    if (text.indexOf(keywords[i]) !== -1) hits.push(keywords[i]);
+  }
+  return hits;
+}
 
 function getDomain(raw) {
   try {
