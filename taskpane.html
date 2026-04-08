@@ -90,8 +90,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 
 <button id="btn" disabled>&#8635; Re-analyser</button>
 
-<div class="section-title">Integrite &amp; headers anti-spam</div>
+<div class="section-title">Integrite du mail</div>
 <div id="integrity"></div>
+
+<div class="section-title">Headers anti-spam</div>
+<div id="headers"></div>
 
 <div class="section-title">Analyse des liens</div>
 <div class="stats">
@@ -209,6 +212,7 @@ function run() {
   setBanner('load', null, 'Analyse en cours...', null);
   document.getElementById('list').innerHTML = '';
   document.getElementById('integrity').innerHTML = '';
+  document.getElementById('headers').innerHTML = '';
   document.getElementById('score-bar').style.display = 'none';
 
   var item = Office.context.mailbox.item;
@@ -238,13 +242,12 @@ function run() {
     var links = checkLinks(bodyHtml);
     var headerAnalysis = analyzeHeaders(mimeHeaders);
     var integrity = checkIntegrity(senderEmail, subject, bodyHtml, links);
-    // Inserer les checks headers juste apres l'expediteur (index 1)
-    for (var h = headerAnalysis.length - 1; h >= 0; h--) {
-      integrity.splice(1, 0, headerAnalysis[h]);
-    }
     renderIntegrity(integrity);
+    renderHeaders(headerAnalysis);
     renderLinks(links);
-    renderScore(integrity, links);
+    // Scoring combine integrite + headers
+    var allChecks = integrity.concat(headerAnalysis);
+    renderScore(allChecks, links);
   }
 
   item.body.getAsync(Office.CoercionType.Html, function(result) {
@@ -690,6 +693,24 @@ function renderIntegrity(checks) {
     h += '</div></div>';
   }
   document.getElementById('integrity').innerHTML = h;
+}
+
+/* -- Rendu : Headers anti-spam ------------------------------------- */
+
+function renderHeaders(checks) {
+  var h = '';
+  var icons = { pass: '&#10003;', warn: '&#9888;', fail: '&#10007;' };
+
+  for (var i = 0; i < checks.length; i++) {
+    var c = checks[i];
+    h += '<div class="check ' + c.status + '">';
+    h += '<span class="check-icon">' + icons[c.status] + '</span>';
+    h += '<div>';
+    h += '<div class="check-label">' + esc(c.label) + '</div>';
+    h += '<div class="check-detail">' + esc(c.detail) + '</div>';
+    h += '</div></div>';
+  }
+  document.getElementById('headers').innerHTML = h;
 }
 
 /* -- Rendu : Liens ------------------------------------------------- */
