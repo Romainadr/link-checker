@@ -93,6 +93,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 <div class="section-title">Integrite du mail</div>
 <div id="integrity"></div>
 
+<div class="section-title">Headers anti-spam</div>
+<div id="headers"></div>
+
 <div class="section-title">Analyse des liens</div>
 <div class="stats">
   <span>Liens : <b id="c-total">-</b></span>
@@ -107,10 +110,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 'use strict';
 
 /* ===================================================================
-   Link Checker v3 — Office.js Add-in
+   Link Checker v4 — Office.js Add-in
    1. Integrite du mail (expediteur, sujet, corps, domaines)
-   2. Analyse des liens (mismatch, heuristique domaine)
-   3. Score de confiance pondere sur 100
+   2. Headers anti-spam (SCL, BCL, EOP, SPF/DKIM/DMARC)
+   3. Analyse des liens (mismatch, heuristique domaine)
+   4. Score de confiance pondere sur 100
    =================================================================== */
 
 var currentItemId = null;
@@ -208,6 +212,7 @@ function run() {
   setBanner('load', null, 'Analyse en cours...', null);
   document.getElementById('list').innerHTML = '';
   document.getElementById('integrity').innerHTML = '';
+  document.getElementById('headers').innerHTML = '';
   document.getElementById('score-bar').style.display = 'none';
 
   var item = Office.context.mailbox.item;
@@ -221,22 +226,45 @@ function run() {
     subject = item.subject || '';
   } catch(e) {}
 
-  item.body.getAsync(
-    Office.CoercionType.Html,
-    function(result) {
-      btn.disabled = false;
-      if (result.status !== Office.AsyncResultStatus.Succeeded) {
-        setBanner('ko', null, 'Impossible de lire le contenu', null);
-        return;
-      }
-      var html = result.value || '';
-      var links = checkLinks(html);
-      var integrity = checkIntegrity(senderEmail, subject, html, links);
-      renderIntegrity(integrity);
-      renderLinks(links);
-      renderScore(integrity, links);
+  // Recuperation parallele du body HTML et des headers MIME
+  var bodyHtml = null;
+  var mimeHeaders = null;
+  var pending = 2;
+
+  function onPartReady() {
+    pending--;
+    if (pending > 0) return;
+    btn.disabled = false;
+    if (!bodyHtml && bodyHtml !== '') {
+      setBanner('ko', null, 'Impossible de lire le contenu', null);
+      return;
     }
-  );
+    var links = checkLinks(bodyHtml);
+    var headerAnalysis = analyzeHeaders(mimeHeaders);
+    var integrity = checkIntegrity(senderEmail, subject, bodyHtml, links);
+    renderIntegrity(integrity);
+    renderHeaders(headerAnalysis);
+    renderLinks(links);
+    // Scoring combine integrite + headers
+    var allChecks = integrity.concat(headerAnalysis);
+    renderScore(allChecks, links);
+  }
+
+  item.body.getAsync(Office.CoercionType.Html, function(result) {
+    bodyHtml = (result.status === Office.AsyncResultStatus.Succeeded) ? (result.value || '') : null;
+    onPartReady();
+  });
+
+  // Lecture des headers MIME via getAllInternetHeadersAsync (Mailbox 1.8+)
+  if (item.getAllInternetHeadersAsync) {
+    item.getAllInternetHeadersAsync(function(result) {
+      mimeHeaders = (result.status === Office.AsyncResultStatus.Succeeded) ? result.value : null;
+      onPartReady();
+    });
+  } else {
+    mimeHeaders = null;
+    onPartReady();
+  }
 }
 
 /* -- Check integrite du mail --------------------------------------- */
@@ -345,6 +373,142 @@ function checkIntegrity(senderEmail, subject, html, links) {
   }
 
   return checks;
+}
+
+/* -- Analyse des headers MIME (SCL, BCL, SPF, DKIM, DMARC) -------- */
+
+function analyzeHeaders(raw) {
+  var checks = [];
+  if (!raw) {
+    checks.push({
+      id: 'headers', label: 'Headers anti-spam', status: 'warn',
+      detail: 'Headers MIME indisponibles (client non supporte ou mail local)'
+    });
+    return checks;
+  }
+
+  // --- SCL (Spam Confidence Level) ---
+  var sclMatch = raw.match(/X-MS-Exchange-Organization-SCL:\s*(-?\d+)/i);
+  // Fallback : chercher SCL dans X-Forefront-Antispam-Report
+  if (!sclMatch) {
+    var faMatch = raw.match(/X-Forefront-Antispam-Report:.*?SCL:(-?\d+)/i);
+    if (faMatch) sclMatch = faMatch;
+  }
+  if (sclMatch) {
+    var scl = parseInt(sclMatch[1], 10);
+    if (scl <= 0) {
+      checks.push({ id: 'scl', label: 'SCL (Spam Confidence)', status: 'pass',
+        detail: 'SCL = ' + scl + ' — Message de confiance (bypass anti-spam ou interne)' });
+    } else if (scl <= 3) {
+      checks.push({ id: 'scl', label: 'SCL (Spam Confidence)', status: 'pass',
+        detail: 'SCL = ' + scl + ' — Niveau de spam faible' });
+    } else if (scl <= 5) {
+      checks.push({ id: 'scl', label: 'SCL (Spam Confidence)', status: 'warn',
+        detail: 'SCL = ' + scl + ' — Niveau de spam modere, prudence' });
+    } else {
+      checks.push({ id: 'scl', label: 'SCL (Spam Confidence)', status: 'fail',
+        detail: 'SCL = ' + scl + ' — Niveau de spam eleve, message tres suspect' });
+    }
+  }
+
+  // --- BCL (Bulk Complaint Level) ---
+  var bclMatch = raw.match(/BCL:(\d+)/i);
+  if (bclMatch) {
+    var bcl = parseInt(bclMatch[1], 10);
+    if (bcl <= 3) {
+      checks.push({ id: 'bcl', label: 'BCL (Bulk / Masse)', status: 'pass',
+        detail: 'BCL = ' + bcl + ' — Expediteur avec peu de plaintes' });
+    } else if (bcl <= 6) {
+      checks.push({ id: 'bcl', label: 'BCL (Bulk / Masse)', status: 'warn',
+        detail: 'BCL = ' + bcl + ' — Expediteur d\'envois en masse (taux de plaintes modere)' });
+    } else {
+      checks.push({ id: 'bcl', label: 'BCL (Bulk / Masse)', status: 'fail',
+        detail: 'BCL = ' + bcl + ' — Fort taux de plaintes, probable spam ou campagne de masse' });
+    }
+  }
+
+  // --- Categorie EOP (CAT dans X-Forefront-Antispam-Report) ---
+  var catMatch = raw.match(/X-Forefront-Antispam-Report:.*?CAT:([A-Z]+)/i);
+  if (catMatch) {
+    var cat = catMatch[1].toUpperCase();
+    var catLabels = {
+      'NONE': { status: 'pass', text: 'Aucune menace detectee par EOP' },
+      'SPM': { status: 'warn', text: 'Classe comme spam par EOP' },
+      'HSPM': { status: 'fail', text: 'Classe comme spam haute confiance par EOP' },
+      'PHSH': { status: 'fail', text: 'Classe comme PHISHING par EOP' },
+      'HPHSH': { status: 'fail', text: 'Classe comme phishing haute confiance par EOP' },
+      'MALW': { status: 'fail', text: 'MALWARE detecte par EOP' },
+      'BULK': { status: 'warn', text: 'Classe comme envoi de masse (bulk) par EOP' },
+      'GIMP': { status: 'pass', text: 'Source autorisee (Mailbox Intelligence)' },
+      'SAP': { status: 'pass', text: 'Politique anti-spam approuvee' },
+      'OSPM': { status: 'warn', text: 'Spam sortant detecte' }
+    };
+    var catInfo = catLabels[cat] || { status: 'warn', text: 'Categorie EOP : ' + cat };
+    checks.push({ id: 'eop-cat', label: 'Categorie EOP', status: catInfo.status,
+      detail: catInfo.text });
+  }
+
+  // --- Authentification (SPF, DKIM, DMARC) ---
+  var authResults = raw.match(/Authentication-Results:.*?(?=\r?\n[^\s])/si);
+  if (!authResults) {
+    // Fallback : recherche multi-ligne plus large
+    authResults = raw.match(/Authentication-Results:[^\r\n]*/i);
+  }
+  if (authResults) {
+    var authStr = authResults[0];
+    var spfResult = extractAuthResult(authStr, 'spf');
+    var dkimResult = extractAuthResult(authStr, 'dkim');
+    var dmarcResult = extractAuthResult(authStr, 'dmarc');
+
+    var authChecks = [];
+    var authFails = 0;
+    var authPasses = 0;
+
+    if (spfResult) {
+      authChecks.push('SPF=' + spfResult);
+      if (spfResult === 'pass') authPasses++; else if (spfResult === 'fail' || spfResult === 'softfail') authFails++;
+    }
+    if (dkimResult) {
+      authChecks.push('DKIM=' + dkimResult);
+      if (dkimResult === 'pass') authPasses++; else if (dkimResult === 'fail') authFails++;
+    }
+    if (dmarcResult) {
+      authChecks.push('DMARC=' + dmarcResult);
+      if (dmarcResult === 'pass') authPasses++; else if (dmarcResult === 'fail') authFails++;
+    }
+
+    if (authChecks.length > 0) {
+      var authStatus = 'pass';
+      var authMsg = authChecks.join(', ');
+      if (authFails >= 2) {
+        authStatus = 'fail';
+        authMsg += ' — Authentification defaillante, usurpation probable';
+      } else if (authFails >= 1) {
+        authStatus = 'warn';
+        authMsg += ' — Echec partiel d\'authentification';
+      } else if (authPasses >= 2) {
+        authMsg += ' — Authentification valide';
+      }
+      checks.push({ id: 'auth', label: 'Authentification (SPF/DKIM/DMARC)', status: authStatus,
+        detail: authMsg });
+    }
+  }
+
+  // Si aucun header pertinent n'a ete trouve (mail sans headers EOP)
+  if (checks.length === 0) {
+    checks.push({
+      id: 'headers', label: 'Headers anti-spam', status: 'warn',
+      detail: 'Aucun header anti-spam EOP detecte (mail interne ou non-M365)'
+    });
+  }
+
+  return checks;
+}
+
+function extractAuthResult(authStr, method) {
+  var re = new RegExp(method + '=([a-z]+)', 'i');
+  var m = authStr.match(re);
+  return m ? m[1].toLowerCase() : null;
 }
 
 /* -- Extraction + comparaison des liens ---------------------------- */
@@ -531,6 +695,24 @@ function renderIntegrity(checks) {
   document.getElementById('integrity').innerHTML = h;
 }
 
+/* -- Rendu : Headers anti-spam ------------------------------------- */
+
+function renderHeaders(checks) {
+  var h = '';
+  var icons = { pass: '&#10003;', warn: '&#9888;', fail: '&#10007;' };
+
+  for (var i = 0; i < checks.length; i++) {
+    var c = checks[i];
+    h += '<div class="check ' + c.status + '">';
+    h += '<span class="check-icon">' + icons[c.status] + '</span>';
+    h += '<div>';
+    h += '<div class="check-label">' + esc(c.label) + '</div>';
+    h += '<div class="check-detail">' + esc(c.detail) + '</div>';
+    h += '</div></div>';
+  }
+  document.getElementById('headers').innerHTML = h;
+}
+
 /* -- Rendu : Liens ------------------------------------------------- */
 
 function renderLinks(links) {
@@ -579,6 +761,14 @@ function renderLinks(links) {
     -------------------------------------------------------
     Expediteur externe non-trusted :          -25
     Expediteur externe suspect :             -25
+    SCL 4-5 (warn) :                         -10
+    SCL 6+ (fail) :                          -25
+    BCL 4-6 (warn) :                          -5
+    BCL 7+ (fail) :                          -15
+    EOP categorie PHSH/MALW/HSPM (fail) :   -30
+    EOP categorie SPM/BULK (warn) :          -10
+    Auth (SPF/DKIM/DMARC) fail partiel :    -10
+    Auth fail multiple :                     -20
     Mot-cle phishing sujet (warn) :          -5
     Formulation phishing corps (warn) :     -10
     Formulation phishing corps (fail) :     -25
@@ -597,6 +787,22 @@ function computeScore(integrity, links) {
       case 'sender':
         if (c.status === 'fail') score -= 25;
         else if (c.status === 'warn') score -= 25;
+        break;
+      case 'scl':
+        if (c.status === 'fail') score -= 25;
+        else if (c.status === 'warn') score -= 10;
+        break;
+      case 'bcl':
+        if (c.status === 'fail') score -= 15;
+        else if (c.status === 'warn') score -= 5;
+        break;
+      case 'eop-cat':
+        if (c.status === 'fail') score -= 30;
+        else if (c.status === 'warn') score -= 10;
+        break;
+      case 'auth':
+        if (c.status === 'fail') score -= 20;
+        else if (c.status === 'warn') score -= 10;
         break;
       case 'subject':
         if (c.status === 'warn') score -= 5;
@@ -649,7 +855,7 @@ function renderScore(integrity, links) {
 
   // Banniere par palier
   if (score > 90) {
-    setBanner('ok', '&#10004;', 'Confiance élevée (' + score + '/100)',
+    setBanner('ok', '&#10004;', 'Confiance elevee (' + score + '/100)',
       links.length + ' lien(s) verifie(s), integrite OK');
   } else if (score >= 75) {
     setBanner('good', '&#10004;', 'Confiance correcte (' + score + '/100)',
@@ -660,10 +866,10 @@ function renderScore(integrity, links) {
       if (integrity[i].status !== 'pass') warnCount++;
     }
     warnCount += mismatchCount;
-    setBanner('warn', '&#9888;', 'Vigilance recommandée (' + score + '/100)',
+    setBanner('warn', '&#9888;', 'Vigilance recommandee (' + score + '/100)',
       warnCount + ' point(s) d\'attention detecte(s)');
   } else if (score >= 25) {
-    setBanner('ko', '&#128680;', 'Risque élevé (' + score + '/100)',
+    setBanner('ko', '&#128680;', 'Risque eleve (' + score + '/100)',
       'Ce mail presente des signaux de phishing potentiel');
   } else {
     setBanner('danger', '&#128680;', 'Risque critique (' + score + '/100)',
@@ -676,58 +882,38 @@ function renderScore(integrity, links) {
 
 function setMailNotification(score, totalLinks, suspectLinks) {
   var item = Office.context.mailbox.item;
-  if (!item || !item.notificationMessages) {
-    console.log('[LinkChecker] notificationMessages non disponible');
-    return;
-  }
+  if (!item || !item.notificationMessages) return;
+
+  // Supprimer l'ancienne notification si elle existe
+  try { item.notificationMessages.removeAsync('linkchecker'); } catch(e) {}
 
   var msg = '';
+  var type = Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage;
+  var icon = 'Icon.16';
   var persistent = false;
 
   if (score > 90) {
-    msg = 'Link Checker : Confiance élevée - ' + totalLinks + ' lien(s) verifies';
+    msg = 'Link Checker : Confiance elevee (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 75) {
-    msg = 'Link Checker : Confiance modérée - ' + totalLinks + ' lien(s) verifies';
+    msg = 'Link Checker : Confiance correcte (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 50) {
-    msg = 'Link Checker : Vigilance recommandée - ' + suspectLinks + ' lien(s) suspect(s)';
+    msg = 'Link Checker : Vigilance recommandee (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s)';
     persistent = true;
   } else if (score >= 25) {
-    msg = 'Link Checker : Risque élevé - ' + suspectLinks + ' lien(s) suspect(s) detecte(s)';
+    msg = 'Link Checker : Risque eleve (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s) detecte(s)';
     persistent = true;
   } else {
-    msg = 'Link Checker : RISQUE CRITIQUE - Ce mail presente de forts signaux de phishing';
+    msg = 'Link Checker : RISQUE CRITIQUE (' + score + '/100) — Ce mail presente de forts signaux de phishing';
     persistent = true;
   }
 
-  // Determiner l'icon resource ID selon le VersionOverrides actif
-  var iconId = 'lc.Icon.16';
-
-  var notifDetails = {
-    type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
+  item.notificationMessages.addAsync('linkchecker', {
+    type: type,
     message: msg,
-    icon: iconId,
+    icon: 'lc.Icon.16',
     persistent: persistent
-  };
-
-  // Supprimer l'ancienne notification AVANT d'ajouter la nouvelle (chaining async)
-  item.notificationMessages.removeAsync('linkchecker', function(removeResult) {
-    // removeAsync peut echouer si la notif n'existe pas encore — on ignore
-    item.notificationMessages.addAsync('linkchecker', notifDetails, function(addResult) {
-      if (addResult.status === Office.AsyncResultStatus.Failed) {
-        console.log('[LinkChecker] Notification echouee: ' + addResult.error.message);
-        // Fallback : essayer avec l'icon V1_0
-        notifDetails.icon = 'Icon.16';
-        item.notificationMessages.addAsync('linkchecker_fb', notifDetails, function(fbResult) {
-          if (fbResult.status === Office.AsyncResultStatus.Failed) {
-            console.log('[LinkChecker] Notification fallback echouee: ' + fbResult.error.message);
-          } else {
-            console.log('[LinkChecker] Notification OK (fallback icon)');
-          }
-        });
-      } else {
-        console.log('[LinkChecker] Notification OK');
-      }
-    });
+  }, function(result) {
+    // Silencieux en cas d'echec (certains clients ne supportent pas)
   });
 }
 
@@ -745,4 +931,4 @@ function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function trunc(s, n) { return s.length <= n ? s : s.slice(0, n-1) + '...'; }
 </script>
 </body>
-</html>
+</html
