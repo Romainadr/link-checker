@@ -834,7 +834,7 @@ function computeScore(integrity, links) {
     var c = integrity[i];
     switch (c.id) {
       case 'sender':
-        if (c.status === 'fail') score -= 25;
+        if (c.status === 'fail') score -= 40;
         else if (c.status === 'warn') score -= 25;
         break;
       case 'scl':
