@@ -96,6 +96,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 <div class="section-title">Headers anti-spam</div>
 <div id="headers"></div>
 
+<div class="section-title">Pieces jointes</div>
+<div id="attachments"></div>
+
 <div class="section-title">Analyse des liens</div>
 <div class="stats">
   <span>Liens : <b id="c-total">-</b></span>
@@ -222,6 +225,33 @@ var BODY_LOW = [
   'connectez-vous', 'log in to your account'
 ];
 
+/* -- Extensions et noms de fichiers suspects ----------------------- */
+
+var DANGEROUS_EXTENSIONS = [
+  'exe', 'scr', 'bat', 'cmd', 'com', 'pif', 'vbs', 'vbe',
+  'js', 'jse', 'wsf', 'wsh', 'ps1', 'psm1',
+  'msi', 'msp', 'hta', 'cpl', 'inf', 'reg',
+  'iso', 'img', 'vhd', 'vhdx',
+  'lnk', 'url', 'iqy', 'slk',
+  'dll', 'ocx', 'sys', 'drv'
+];
+
+var MACRO_EXTENSIONS = [
+  'docm', 'xlsm', 'pptm', 'dotm', 'xltm', 'potm',
+  'xlam', 'ppam', 'sldm'
+];
+
+var ARCHIVE_EXTENSIONS = [
+  'zip', 'rar', '7z', 'tar', 'gz', 'cab', 'arj', 'ace'
+];
+
+var GENERIC_ATTACHMENT_NAMES = [
+  'document', 'fichier', 'file', 'invoice', 'facture',
+  'scan', 'copie', 'copy', 'payment', 'paiement',
+  'order', 'commande', 'receipt', 'recu', 'img', 'photo',
+  'dhl', 'fedex', 'ups', 'delivery', 'livraison'
+];
+
 /* -- Analyse principale -------------------------------------------- */
 
 function run() {
@@ -231,6 +261,7 @@ function run() {
   document.getElementById('list').innerHTML = '';
   document.getElementById('integrity').innerHTML = '';
   document.getElementById('headers').innerHTML = '';
+  document.getElementById('attachments').innerHTML = '';
   document.getElementById('score-bar').style.display = 'none';
 
   var item = Office.context.mailbox.item;
@@ -259,13 +290,15 @@ function run() {
     }
     var links = checkLinks(bodyHtml);
     var headerAnalysis = analyzeHeaders(mimeHeaders);
+    var attachmentAnalysis = analyzeAttachments(item);
     var hasSuspectLinks = links.some(function(l) { return l.mismatch; });
     var integrity = checkIntegrity(senderEmail, subject, bodyHtml, links, hasSuspectLinks, headerAnalysis);
     renderIntegrity(integrity);
     renderHeaders(headerAnalysis);
+    renderAttachments(attachmentAnalysis);
     renderLinks(links);
-    // Scoring combine integrite + headers
-    var allChecks = integrity.concat(headerAnalysis);
+    // Scoring combine integrite + headers + pièces jointes
+    var allChecks = integrity.concat(headerAnalysis).concat(attachmentAnalysis);
     renderScore(allChecks, links);
   }
 
@@ -535,6 +568,30 @@ function analyzeHeaders(raw) {
     }
   }
 
+  // --- Reply-To != From (usurpation classique) ---
+  var replyToMatch = raw.match(/Reply-To:\s*<?([^\s<>,;]+@[^\s<>,;]+)>?/i);
+  if (replyToMatch) {
+    var replyToEmail = replyToMatch[1].toLowerCase();
+    var fromMatch = raw.match(/^From:\s*(?:.*<)?([^\s<>,;]+@[^\s<>,;]+)>?/im);
+    var fromEmail = fromMatch ? fromMatch[1].toLowerCase() : '';
+
+    if (fromEmail && replyToEmail !== fromEmail) {
+      var replyToDomain = getDomainFromEmail(replyToEmail);
+      var fromDomain = getDomainFromEmail(fromEmail);
+      if (replyToDomain !== fromDomain) {
+        checks.push({
+          id: 'reply-to', label: 'Reply-To divergent', status: 'fail',
+          detail: 'From: ' + fromEmail + ' mais Reply-To: ' + replyToEmail + ' — domaines differents, usurpation probable'
+        });
+      } else {
+        checks.push({
+          id: 'reply-to', label: 'Reply-To divergent', status: 'warn',
+          detail: 'From: ' + fromEmail + ' mais Reply-To: ' + replyToEmail + ' (meme domaine)'
+        });
+      }
+    }
+  }
+
   // Si aucun header pertinent n'a ete trouve (mail sans headers EOP)
   if (checks.length === 0) {
     checks.push({
@@ -550,6 +607,127 @@ function extractAuthResult(authStr, method) {
   var re = new RegExp(method + '=([a-z]+)', 'i');
   var m = authStr.match(re);
   return m ? m[1].toLowerCase() : null;
+}
+
+/* -- Analyse des pieces jointes ------------------------------------ */
+
+function analyzeAttachments(item) {
+  var checks = [];
+  var attachments = (item && item.attachments) ? item.attachments : [];
+
+  if (attachments.length === 0) {
+    checks.push({
+      id: 'attach', label: 'Pieces jointes', status: 'pass',
+      detail: 'Aucune piece jointe'
+    });
+    return checks;
+  }
+
+  var dangerousFound = [];
+  var macroFound = [];
+  var archiveFound = [];
+  var doubleExtFound = [];
+  var genericNameFound = [];
+
+  for (var i = 0; i < attachments.length; i++) {
+    var att = attachments[i];
+    var name = (att.name || '').toLowerCase();
+    var nameParts = name.split('.');
+
+    // Double extension (ex: invoice.pdf.exe)
+    if (nameParts.length >= 3) {
+      var lastExt = nameParts[nameParts.length - 1];
+      if (DANGEROUS_EXTENSIONS.indexOf(lastExt) !== -1) {
+        doubleExtFound.push(att.name);
+        continue;
+      }
+    }
+
+    // Extension finale
+    var ext = nameParts.length >= 2 ? nameParts[nameParts.length - 1] : '';
+
+    if (DANGEROUS_EXTENSIONS.indexOf(ext) !== -1) {
+      dangerousFound.push(att.name);
+    } else if (MACRO_EXTENSIONS.indexOf(ext) !== -1) {
+      macroFound.push(att.name);
+    } else if (ARCHIVE_EXTENSIONS.indexOf(ext) !== -1) {
+      archiveFound.push(att.name);
+    }
+
+    // Nom generique suspect
+    var baseName = nameParts.slice(0, -1).join('.').replace(/[\d_\-\s]/g, '');
+    for (var g = 0; g < GENERIC_ATTACHMENT_NAMES.length; g++) {
+      if (baseName === GENERIC_ATTACHMENT_NAMES[g]) {
+        genericNameFound.push(att.name);
+        break;
+      }
+    }
+  }
+
+  // Double extension = critique
+  if (doubleExtFound.length > 0) {
+    checks.push({
+      id: 'attach-double', label: 'Double extension detectee', status: 'fail',
+      detail: 'Fichier(s) avec double extension (technique d\'usurpation) : ' + doubleExtFound.join(', ')
+    });
+  }
+
+  // Extensions dangereuses
+  if (dangerousFound.length > 0) {
+    checks.push({
+      id: 'attach-danger', label: 'Extension dangereuse', status: 'fail',
+      detail: 'Fichier(s) executable(s) ou script(s) : ' + dangerousFound.join(', ')
+    });
+  }
+
+  // Macros
+  if (macroFound.length > 0) {
+    checks.push({
+      id: 'attach-macro', label: 'Fichier avec macros', status: 'warn',
+      detail: 'Document(s) Office avec macros activees : ' + macroFound.join(', ')
+    });
+  }
+
+  // Archives
+  if (archiveFound.length > 0) {
+    checks.push({
+      id: 'attach-archive', label: 'Archive compresse', status: 'warn',
+      detail: 'Archive(s) pouvant masquer du contenu malveillant : ' + archiveFound.join(', ')
+    });
+  }
+
+  // Noms generiques
+  if (genericNameFound.length > 0) {
+    checks.push({
+      id: 'attach-generic', label: 'Nom generique', status: 'warn',
+      detail: 'Nom(s) de fichier generique(s) souvent utilise(s) en phishing : ' + genericNameFound.join(', ')
+    });
+  }
+
+  // Tout OK
+  if (checks.length === 0) {
+    checks.push({
+      id: 'attach', label: 'Pieces jointes', status: 'pass',
+      detail: attachments.length + ' piece(s) jointe(s), aucune anomalie detectee'
+    });
+  }
+
+  return checks;
+}
+
+function renderAttachments(checks) {
+  var h = '';
+  var icons = { pass: '&#10003;', warn: '&#9888;', fail: '&#10007;' };
+  for (var i = 0; i < checks.length; i++) {
+    var c = checks[i];
+    h += '<div class="check ' + c.status + '">';
+    h += '<span class="check-icon">' + icons[c.status] + '</span>';
+    h += '<div>';
+    h += '<div class="check-label">' + esc(c.label) + '</div>';
+    h += '<div class="check-detail">' + esc(c.detail) + '</div>';
+    h += '</div></div>';
+  }
+  document.getElementById('attachments').innerHTML = h;
 }
 
 /* -- Extraction + comparaison des liens ---------------------------- */
@@ -818,6 +996,13 @@ function renderLinks(links) {
     EOP categorie SPM/BULK (warn) :          -10
     Auth (SPF/DKIM/DMARC) fail partiel :    -10
     Auth fail multiple :                     -20
+    Reply-To != From meme domaine (warn) :   -5
+    Reply-To != From domaines diff (fail) : -20
+    PJ double extension (fail) :            -30
+    PJ extension dangereuse (fail) :        -25
+    PJ macros (warn) :                      -10
+    PJ archive (warn) :                      -5
+    PJ nom generique (warn) :                -5
     Mot-cle phishing sujet (warn) :          -5
     Formulation phishing corps (warn) :     -10
     Formulation phishing corps (fail) :     -25
@@ -834,7 +1019,7 @@ function computeScore(integrity, links) {
     var c = integrity[i];
     switch (c.id) {
       case 'sender':
-        if (c.status === 'fail') score -= 40;
+        if (c.status === 'fail') score -= 25;
         else if (c.status === 'warn') score -= 25;
         break;
       case 'scl':
@@ -852,6 +1037,25 @@ function computeScore(integrity, links) {
       case 'auth':
         if (c.status === 'fail') score -= 20;
         else if (c.status === 'warn') score -= 10;
+        break;
+      case 'reply-to':
+        if (c.status === 'fail') score -= 20;
+        else if (c.status === 'warn') score -= 5;
+        break;
+      case 'attach-double':
+        if (c.status === 'fail') score -= 30;
+        break;
+      case 'attach-danger':
+        if (c.status === 'fail') score -= 25;
+        break;
+      case 'attach-macro':
+        if (c.status === 'warn') score -= 10;
+        break;
+      case 'attach-archive':
+        if (c.status === 'warn') score -= 5;
+        break;
+      case 'attach-generic':
+        if (c.status === 'warn') score -= 5;
         break;
       case 'subject':
         if (c.status === 'warn') score -= 5;
@@ -942,7 +1146,7 @@ function setMailNotification(score, totalLinks, suspectLinks) {
   var persistent = false;
 
   if (score > 90) {
-    msg = '❗Link Checker : Confiance elevee (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
+    msg = 'Link Checker : Confiance elevee (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 75) {
     msg = 'Link Checker : Confiance correcte (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
   } else if (score >= 50) {
