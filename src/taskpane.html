@@ -225,6 +225,27 @@ var BODY_LOW = [
   'connectez-vous', 'log in to your account'
 ];
 
+/* -- URL shorteners et TLD suspects ------------------------------- */
+
+var URL_SHORTENERS = [
+  'bit.ly', 'tinyurl.com', 't.co', 'ow.ly', 'goo.gl',
+  'is.gd', 'buff.ly', 'adf.ly', 'bl.ink', 'lnkd.in',
+  'shorturl.at', 'rb.gy', 'cutt.ly', 'v.gd', 'qr.ae',
+  'tiny.cc', 'soo.gd', 'short.io', 'rebrand.ly', 'yourls.org',
+  'dub.sh', 'clck.ru', 'mcaf.ee', 'su.pr', 'u.to',
+  'shrtco.de', 'hyperurl.co', 'urlz.fr', 'lc.cx'
+];
+
+var SUSPECT_TLDS = [
+  'xyz', 'top', 'buzz', 'click', 'link', 'surf', 'rest',
+  'icu', 'cam', 'monster', 'cyou', 'cfd', 'sbs', 'quest',
+  'beauty', 'hair', 'makeup', 'skin', 'boats', 'stream',
+  'gdn', 'bid', 'trade', 'win', 'review', 'racing',
+  'party', 'science', 'work', 'cricket', 'date', 'faith',
+  'loan', 'download', 'accountant', 'christmas', 'zip', 'mov',
+  'tk', 'ml', 'ga', 'cf', 'gq'
+];
+
 /* -- Extensions et noms de fichiers suspects ----------------------- */
 
 var DANGEROUS_EXTENSIONS = [
@@ -759,6 +780,9 @@ function checkLinks(html) {
     var hrefDomain = getDomain(href);
     if (!hrefDomain) continue;
 
+    // Domaine complet (avec sous-domaines) pour les shorteners
+    var hrefHostname = getHostname(href);
+
     var mismatch = false;
     var suspicious = false;
     var reason = '';
@@ -773,14 +797,37 @@ function checkLinks(html) {
       }
     }
 
-    // Check 2 : analyse heuristique du domaine
+    // Check 2 : lien sans texte visible (vide) = suspect si non-trusted
+    if (!text || text === '') {
+      if (!isTrustedDomain(hrefDomain)) {
+        suspicious = true;
+        warnings.push('Lien sans texte visible vers un domaine non-repertorie');
+      }
+    }
+
+    // Check 3 : URL shortener (destination masquee)
+    if (isUrlShortener(hrefHostname)) {
+      suspicious = true;
+      warnings.push('Lien raccourci (' + hrefHostname + ') masquant la destination reelle');
+    }
+
+    // Check 4 : TLD suspect / jetable
+    var tld = getTld(hrefHostname);
+    if (tld && SUSPECT_TLDS.indexOf(tld) !== -1 && !isTrustedDomain(hrefDomain)) {
+      suspicious = true;
+      warnings.push('TLD suspect ".' + tld + '" frequemment utilise dans le phishing');
+    }
+
+    // Check 5 : analyse heuristique du domaine (keywords, brand spoofing)
     var suspiciousReasons = checkSuspiciousDomain(href, hrefDomain);
     if (suspiciousReasons && !isTrustedDomain(hrefDomain)) {
       suspicious = true;
-      warnings = suspiciousReasons;
-      if (!mismatch) reason = warnings.join(' | ');
+      for (var r = 0; r < suspiciousReasons.length; r++) {
+        if (warnings.indexOf(suspiciousReasons[r]) === -1) warnings.push(suspiciousReasons[r]);
+      }
     }
 
+    if (!mismatch && warnings.length > 0) reason = warnings.join(' | ');
     var flagged = mismatch || suspicious;
 
     results.push({
@@ -797,6 +844,28 @@ function checkLinks(html) {
     });
   }
   return results;
+}
+
+function isUrlShortener(hostname) {
+  if (!hostname) return false;
+  for (var i = 0; i < URL_SHORTENERS.length; i++) {
+    if (hostname === URL_SHORTENERS[i]) return true;
+  }
+  return false;
+}
+
+function getHostname(raw) {
+  try {
+    var s = raw.trim();
+    if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+    return new URL(s).hostname.toLowerCase();
+  } catch(e) { return ''; }
+}
+
+function getTld(hostname) {
+  if (!hostname) return '';
+  var parts = hostname.split('.');
+  return parts.length >= 2 ? parts[parts.length - 1] : '';
 }
 
 /* -- Analyse heuristique domaine ----------------------------------- */
