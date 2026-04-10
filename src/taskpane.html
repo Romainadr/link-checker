@@ -165,7 +165,7 @@ var TRUSTED_DOMAINS = [
   'shopify.com', 'zoom.us', 'slack.com', 'teams.microsoft.com',
   'airtable.com', 'notion.so', 'asana.com', 'trello.com',
   'canva.com', 'figma.com', 'github.io', 'gitlab.com',
-  'jira.com','monday.com','ricoh.com'
+  'jira.com','monday.com'
 ];
 
 var SUSPICIOUS_KEYWORDS = [
@@ -816,9 +816,9 @@ function checkLinks(html) {
     var warnings = [];
 
     // Check 1 : texte URL-like vs href domain mismatch
-    // Ignorer si le texte est une adresse email (pattern annuaire/profil legitime)
+    // Ignorer si : texte = email (annuaire/profil) OU destination = domaine trusted
     var textIsEmail = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(text.trim());
-    if (!textIsEmail && looksLikeUrl(text)) {
+    if (!textIsEmail && !isTrustedDomain(hrefDomain) && looksLikeUrl(text)) {
       var textDomain = getDomain(text);
       if (textDomain && textDomain !== hrefDomain) {
         mismatch = true;
