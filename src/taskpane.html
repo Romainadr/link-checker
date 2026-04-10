@@ -62,6 +62,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 .tag.ko{background:#fde7e9;color:#a4262c}
 .tag.warn{background:#fff4ce;color:#8a6914}
 
+.link-inspect{color:#605e5c;text-decoration:underline;text-decoration-style:dotted;word-break:break-all}
+.link-inspect:hover{color:#0078d4}
 .empty{padding:10px 14px;color:#605e5c;font-size:12px;font-style:italic}
 .foot{padding:8px 14px;font-size:10px;color:#a19f9d;text-align:center}
 </style>
@@ -590,10 +592,14 @@ function analyzeHeaders(raw) {
   }
 
   // --- Reply-To != From (usurpation classique) ---
-  var replyToMatch = raw.match(/Reply-To:\s*<?([^\s<>,;]+@[^\s<>,;]+)>?/i);
+  // Regex stricte : exclut les artefacts MIME ($, =, etc.)
+  var emailRe = /([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/;
+  var replyToLine = raw.match(/Reply-To:\s*[^\r\n]*/i);
+  var replyToMatch = replyToLine ? replyToLine[0].match(emailRe) : null;
   if (replyToMatch) {
     var replyToEmail = replyToMatch[1].toLowerCase();
-    var fromMatch = raw.match(/^From:\s*(?:.*<)?([^\s<>,;]+@[^\s<>,;]+)>?/im);
+    var fromLine = raw.match(/^From:\s*[^\r\n]*/im);
+    var fromMatch = fromLine ? fromLine[0].match(emailRe) : null;
     var fromEmail = fromMatch ? fromMatch[1].toLowerCase() : '';
 
     if (fromEmail && replyToEmail !== fromEmail) {
@@ -754,14 +760,31 @@ function renderAttachments(checks) {
 /* -- Extraction + comparaison des liens ---------------------------- */
 
 function unwrapSafeLinks(href) {
-  try {
-    var u = new URL(href);
-    if (u.hostname.indexOf('safelinks.protection.outlook.com') !== -1) {
-      var real = u.searchParams.get('url');
-      if (real) return real;
-    }
-  } catch(e) {}
-  return href;
+  var maxDepth = 3;
+  var current = href;
+  for (var d = 0; d < maxDepth; d++) {
+    try {
+      var u = new URL(current);
+      var h = u.hostname.toLowerCase();
+      // Microsoft SafeLinks classique
+      if (h.indexOf('safelinks.protection.outlook.com') !== -1) {
+        var real = u.searchParams.get('url');
+        if (real) { current = real; continue; }
+      }
+      // Microsoft redirect service (safelink.emails.azure.net)
+      if (h.indexOf('safelink.emails.azure.net') !== -1 || h.indexOf('safelinks.') !== -1) {
+        var dest = u.searchParams.get('destination') || u.searchParams.get('url');
+        if (dest) { current = dest; continue; }
+      }
+      // Google redirect
+      if ((h === 'www.google.com' || h === 'google.com') && u.pathname === '/url') {
+        var gUrl = u.searchParams.get('q') || u.searchParams.get('url');
+        if (gUrl) { current = gUrl; continue; }
+      }
+      break;
+    } catch(e) { break; }
+  }
+  return current;
 }
 
 function checkLinks(html) {
@@ -1031,7 +1054,12 @@ function renderLinks(links) {
     var cls = l.mismatch ? (l.isMismatch ? ' mismatch' : ' suspect') : '';
     h += '<div class="link' + cls + '">';
     h += '<div class="lbl">' + esc(trunc(l.text, 80)) + '</div>';
-    h += '<div class="url">&rarr; ' + esc(trunc(l.href, 120)) + '</div>';
+    // URL cliquable pour inspection (ouvre dans le navigateur)
+    if (l.mismatch) {
+      h += '<div class="url">&rarr; <a href="' + escAttr(l.href) + '" target="_blank" rel="noopener" class="link-inspect" title="Ouvrir pour inspecter">' + esc(trunc(l.href, 120)) + '</a></div>';
+    } else {
+      h += '<div class="url">&rarr; ' + esc(trunc(l.href, 120)) + '</div>';
+    }
     if (l.safelinks) {
       h += '<div class="url" style="color:#0078d4;font-style:italic">&#128737; URL deballee depuis SafeLinks</div>';
     }
@@ -1250,6 +1278,7 @@ function setBanner(cls, icon, msg, sub) {
 }
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function trunc(s, n) { return s.length <= n ? s : s.slice(0, n-1) + '...'; }
 </script>
 </body>
