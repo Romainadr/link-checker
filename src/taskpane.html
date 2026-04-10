@@ -165,7 +165,7 @@ var TRUSTED_DOMAINS = [
   'shopify.com', 'zoom.us', 'slack.com', 'teams.microsoft.com',
   'airtable.com', 'notion.so', 'asana.com', 'trello.com',
   'canva.com', 'figma.com', 'github.io', 'gitlab.com',
-  'jira.com','monday.com','mimecastprotect.com','barracuda.com'
+  'jira.com','monday.com'
 ];
 
 var SUSPICIOUS_KEYWORDS = [
@@ -596,13 +596,17 @@ function analyzeHeaders(raw) {
   var emailRe = /([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/;
   var replyToLine = raw.match(/Reply-To:\s*[^\r\n]*/i);
   var replyToMatch = replyToLine ? replyToLine[0].match(emailRe) : null;
+  // Domaines internes Exchange/EOP a ignorer pour Reply-To
+  var EXCHANGE_INTERNAL_RE = /\.(prod\.exchangelabs\.com|protection\.outlook\.com|outlook\.office365\.com|namprd\d+\.prod\.outlook\.com|eurprd\d+\.prod\.outlook\.com)$/i;
   if (replyToMatch) {
     var replyToEmail = replyToMatch[1].toLowerCase();
     var fromLine = raw.match(/^From:\s*[^\r\n]*/im);
     var fromMatch = fromLine ? fromLine[0].match(emailRe) : null;
     var fromEmail = fromMatch ? fromMatch[1].toLowerCase() : '';
 
-    if (fromEmail && replyToEmail !== fromEmail) {
+    // Ignorer les Reply-To qui sont des IDs internes Exchange
+    var replyToDomainRaw = replyToEmail.split('@')[1] || '';
+    if (fromEmail && replyToEmail !== fromEmail && !EXCHANGE_INTERNAL_RE.test(replyToDomainRaw)) {
       var replyToDomain = getDomainFromEmail(replyToEmail);
       var fromDomain = getDomainFromEmail(fromEmail);
       if (replyToDomain !== fromDomain) {
@@ -812,7 +816,9 @@ function checkLinks(html) {
     var warnings = [];
 
     // Check 1 : texte URL-like vs href domain mismatch
-    if (looksLikeUrl(text)) {
+    // Ignorer si le texte est une adresse email (pattern annuaire/profil legitime)
+    var textIsEmail = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(text.trim());
+    if (!textIsEmail && looksLikeUrl(text)) {
       var textDomain = getDomain(text);
       if (textDomain && textDomain !== hrefDomain) {
         mismatch = true;
