@@ -188,10 +188,10 @@ var BRAND_NAMES = [
 var SUBJECT_HIGH = [
   'urgent', 'immediate', 'action requise', 'action required',
   'suspend', 'bloqu', 'locked', 'desactiv', 'disabled',
-  'mot de passe', 'password', 'expir',
+  'mot de passe', 'password',
   'derniere chance', 'last chance',
   'acces non autorise', 'unauthorized access',
-  'gagn', 'felicitation', 'congratulation'
+  'vous avez gagne', 'felicitations vous', 'congratulations you'
 ];
 
 /* Keywords sujet — basse confiance : frequents dans les mails legitimes,
@@ -200,13 +200,17 @@ var SUBJECT_LOW = [
   'verif', 'confirm', 'securite', 'security', 'alerte', 'alert',
   'facture', 'invoice', 'paiement', 'payment',
   'compte', 'account', 'mise a jour', 'update',
-  'remboursement', 'refund', 'renouvel', 'limite', 'limited'
+  'remboursement', 'refund', 'renouvel', 'limite', 'limited',
+  'expir'
 ];
 
 /* Keywords corps — haute confiance : formulations typiques de phishing */
 var BODY_HIGH = [
   'cliquez ici immediatement', 'click here immediately',
-  'votre compte sera', 'your account will be',
+  'votre compte sera suspend', 'votre compte sera desactiv',
+  'votre compte sera ferm', 'votre compte sera bloqu',
+  'your account will be suspend', 'your account will be terminat',
+  'your account will be clos', 'your account will be lock',
   'verifiez votre identite', 'verify your identity',
   'confirmer vos informations', 'confirm your information',
   'mot de passe expire', 'password expired',
@@ -530,18 +534,19 @@ function analyzeHeaders(raw) {
     var cat = catMatch[1].toUpperCase();
     var catLabels = {
       'NONE': { status: 'pass', text: 'Aucune menace detectee par EOP' },
-      'SPM': { status: 'warn', text: 'Classe comme spam par EOP' },
+      'SPM':  { status: 'warn', text: 'Classe comme spam par EOP' },
       'HSPM': { status: 'fail', text: 'Classe comme spam haute confiance par EOP' },
-      'PHSH': { status: 'fail', text: 'Classe comme PHISHING par EOP' },
-      'HPHSH': { status: 'fail', text: 'Classe comme phishing haute confiance par EOP' },
+      'PHSH': { status: 'fail', text: 'Classe comme PHISHING par EOP', id: 'eop-phsh' },
+      'HPHSH':{ status: 'fail', text: 'Classe comme phishing haute confiance par EOP' },
       'MALW': { status: 'fail', text: 'MALWARE detecte par EOP' },
       'BULK': { status: 'warn', text: 'Classe comme envoi de masse (bulk) par EOP' },
       'GIMP': { status: 'pass', text: 'Source autorisee (Mailbox Intelligence)' },
-      'SAP': { status: 'pass', text: 'Politique anti-spam approuvee' },
+      'SAP':  { status: 'pass', text: 'Politique anti-spam approuvee' },
       'OSPM': { status: 'warn', text: 'Spam sortant detecte' }
     };
     var catInfo = catLabels[cat] || { status: 'warn', text: 'Categorie EOP : ' + cat };
-    checks.push({ id: 'eop-cat', label: 'Categorie EOP', status: catInfo.status,
+    var catId = catInfo.id || 'eop-cat';
+    checks.push({ id: catId, label: 'Categorie EOP', status: catInfo.status,
       detail: catInfo.text });
   }
 
@@ -1089,30 +1094,31 @@ function renderLinks(links) {
 
 /*  Score de confiance sur 100 (deductions depuis 100)
     -------------------------------------------------------
-    Expediteur externe non-trusted :          -25
-    Expediteur externe suspect :             -25
+    Expediteur externe non-trusted (warn) :  -10
+    Expediteur externe suspect (fail) :      -25
     SCL 4-5 (warn) :                         -10
     SCL 6+ (fail) :                          -25
     BCL 4-6 (warn) :                          -5
     BCL 7+ (fail) :                          -15
-    EOP categorie PHSH/MALW/HSPM (fail) :   -30
-    EOP categorie SPM/BULK (warn) :          -10
-    Auth (SPF/DKIM/DMARC) fail partiel :    -10
+    EOP MALW/HPHSH/HSPM (fail) :             -30
+    EOP PHSH (fail) :                        -20
+    EOP SPM/BULK (warn) :                    -10
+    Auth (SPF/DKIM/DMARC) fail partiel :     -10
     Auth fail multiple :                     -20
-    Reply-To != From meme domaine (warn) :   -5
-    Reply-To != From domaines diff (fail) : -20
-    PJ double extension (fail) :            -30
-    PJ extension dangereuse (fail) :        -25
-    PJ macros (warn) :                      -10
-    PJ archive (warn) :                      -5
-    PJ nom generique (warn) :                -5
-    Mot-cle phishing sujet (warn) :          -5
-    Formulation phishing corps (warn) :     -10
-    Formulation phishing corps (fail) :     -25
-    Domaine destination suspect (fail) :    -25
-    Domaines inconnus > 3 (warn) :           -5
-    Lien mismatch texte/href :              -20 par lien (max -40)
-    Lien suspect heuristique :              -10 par lien (max -30)
+    Reply-To != From meme domaine (warn) :    0 (affichage seul)
+    Reply-To != From domaines diff (fail) :  -20
+    PJ double extension (fail) :             -30
+    PJ extension dangereuse (fail) :         -25
+    PJ macros (warn) :                       -10
+    PJ archive (warn) :                       -5
+    PJ nom generique (warn) :                 -5
+    Mot-cle phishing sujet (warn) :           -5
+    Formulation phishing corps (warn) :      -10
+    Formulation phishing corps (fail) :      -25
+    Domaine destination suspect (fail) :     -25
+    Domaines inconnus > 3 (warn) :            -5
+    Lien mismatch texte/href : 1er -15, suivants -10 (max -40)
+    Lien suspect heuristique :               -10 par lien (max -30)
     -------------------------------------------------------  */
 
 function computeScore(integrity, links) {
@@ -1123,7 +1129,7 @@ function computeScore(integrity, links) {
     switch (c.id) {
       case 'sender':
         if (c.status === 'fail') score -= 25;
-        else if (c.status === 'warn') score -= 25;
+        else if (c.status === 'warn') score -= 10;
         break;
       case 'scl':
         if (c.status === 'fail') score -= 25;
@@ -1137,13 +1143,16 @@ function computeScore(integrity, links) {
         if (c.status === 'fail') score -= 30;
         else if (c.status === 'warn') score -= 10;
         break;
+      case 'eop-phsh':
+        if (c.status === 'fail') score -= 20;
+        break;
       case 'auth':
         if (c.status === 'fail') score -= 20;
         else if (c.status === 'warn') score -= 10;
         break;
       case 'reply-to':
         if (c.status === 'fail') score -= 20;
-        else if (c.status === 'warn') score -= 5;
+        // warn (meme domaine) : affichage visuel uniquement, pas de penalite
         break;
       case 'attach-double':
         if (c.status === 'fail') score -= 30;
@@ -1174,10 +1183,14 @@ function computeScore(integrity, links) {
     }
   }
 
+  var mismatchCount = 0;
   var mismatchPenalty = 0;
   var suspectPenalty = 0;
   for (var j = 0; j < links.length; j++) {
-    if (links[j].isMismatch) mismatchPenalty += 20;
+    if (links[j].isMismatch) {
+      mismatchCount++;
+      mismatchPenalty += (mismatchCount === 1) ? 15 : 10;
+    }
     else if (links[j].isSuspicious) suspectPenalty += 10;
   }
   score -= Math.min(40, mismatchPenalty);
