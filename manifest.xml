@@ -174,6 +174,9 @@
           <bt:Image id="lc.Icon.80" DefaultValue="https://romainadr.github.io/link-checker/icon-80.png"/>
           <bt:Image id="lc.Icon.96" DefaultValue="https://romainadr.github.io/link-checker/icon-96.png"/>
           <bt:Image id="lc.Icon.144" DefaultValue="https://romainadr.github.io/link-checker/icon-144.png"/>
+          <bt:Image id="lc.Notif.Ok" DefaultValue="https://romainadr.github.io/link-checker/icon-notif-ok.png"/>
+          <bt:Image id="lc.Notif.Warn" DefaultValue="https://romainadr.github.io/link-checker/icon-notif-warn.png"/>
+          <bt:Image id="lc.Notif.Danger" DefaultValue="https://romainadr.github.io/link-checker/icon-notif-danger.png"/>
         </bt:Images>
         <bt:Urls>
           <bt:Url id="lc.Cmd.Url" DefaultValue="https://romainadr.github.io/link-checker/src/commands.html"/>
