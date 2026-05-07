@@ -202,9 +202,13 @@ function run() {
   }
 
   var senderEmail = '';
+  var senderDisplayName = '';
   var subject = '';
   try {
-    if (item.from) senderEmail = (item.from.emailAddress || '').toLowerCase();
+    if (item.from) {
+      senderEmail = (item.from.emailAddress || '').toLowerCase();
+      senderDisplayName = (item.from.displayName || '');
+    }
     subject = item.subject || '';
   } catch (e) {}
 
@@ -226,6 +230,7 @@ function run() {
 
     var result = window.LC.analyze({
       from: senderEmail,
+      fromDisplayName: senderDisplayName,
       subject: subject,
       bodyHtml: bodyHtml,
       mimeHeaders: mimeHeaders,
@@ -387,9 +392,18 @@ function setMailNotification(score, totalLinks, suspectLinks) {
   }
   if (msg.length > 150) msg = msg.substring(0, 147) + '...';
 
-  /* Icon resid : lc.Icon.16 dans V1_1, Icon.16 en V1_0.
-     replaceAsync est idempotent, pas besoin de remove prealable. */
-  var iconResid = supportsMailbox18 ? 'lc.Icon.16' : 'Icon.16';
+  /* Icon par score : bouclier vert/orange/rouge (V1_1 uniquement).
+     Fallback sur Icon.16 generique en V1_0. */
+  var iconResid;
+  if (!supportsMailbox18) {
+    iconResid = 'Icon.16';
+  } else if (score >= 75) {
+    iconResid = 'lc.Notif.Ok';
+  } else if (score >= 50) {
+    iconResid = 'lc.Notif.Warn';
+  } else {
+    iconResid = 'lc.Notif.Danger';
+  }
 
   var notif = {
     type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
