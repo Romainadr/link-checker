@@ -7,66 +7,83 @@
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <script src="core.js"></script>
 <style>
+/* -- Empirys / CyberOne brand palette -- */
+:root{
+  --emp-red:#C8102E;
+  --emp-red-dark:#9B0C23;
+  --emp-red-light:#F9E6E9;
+  --emp-dark:#1A1A2E;
+  --emp-gray:#4A4A5A;
+  --emp-gray-light:#F5F5F7;
+  --emp-border:#E0E0E6;
+  --emp-green:#2E7D32;
+  --emp-green-bg:#E8F5E9;
+  --emp-orange:#E65100;
+  --emp-orange-bg:#FFF3E0;
+  --emp-red-bg:#FFEBEE;
+}
+
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;background:#fff}
+body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-dark);background:#fff}
 
-.hdr{padding:10px 14px;background:#f3f2f1;border-bottom:1px solid #edebe9;display:flex;align-items:center;gap:8px}
-.hdr h1{font-size:14px;font-weight:600}
+.hdr{padding:12px 14px;background:var(--emp-red);display:flex;align-items:center;gap:10px}
+.hdr h1{font-size:14px;font-weight:600;color:#fff}
+.hdr span{color:#fff}
 
-#banner{padding:10px 14px;border-left:4px solid #c8c6c4;background:#f3f2f1;color:#605e5c;display:flex;align-items:center;gap:8px;min-height:44px}
-#banner.ok{border-color:#107c10;background:#dff6dd;color:#107c10}
-#banner.good{border-color:#0078d4;background:#deecf9;color:#0078d4}
-#banner.warn{border-color:#d83b01;background:#fff4ce;color:#8a6914}
-#banner.ko{border-color:#a4262c;background:#fde7e9;color:#a4262c}
-#banner.danger{border-color:#7f1d1d;background:#f5c6c6;color:#7f1d1d}
+#banner{padding:10px 14px;border-left:4px solid var(--emp-border);background:var(--emp-gray-light);color:var(--emp-gray);display:flex;align-items:center;gap:8px;min-height:44px}
+#banner.ok{border-color:var(--emp-green);background:var(--emp-green-bg);color:var(--emp-green)}
+#banner.good{border-color:var(--emp-red);background:var(--emp-red-light);color:var(--emp-red-dark)}
+#banner.warn{border-color:var(--emp-orange);background:var(--emp-orange-bg);color:var(--emp-orange)}
+#banner.ko{border-color:#C62828;background:#FFCDD2;color:#B71C1C}
+#banner.danger{border-color:#7f1d1d;background:#FFCDD2;color:#7f1d1d}
 .b-icon{font-size:18px;flex-shrink:0}
 .b-title{font-size:13px;font-weight:600}
 .b-sub{font-size:11px;margin-top:2px;opacity:.85}
 
-.spin{width:16px;height:16px;border:2px solid #edebe9;border-top-color:#0078d4;border-radius:50%;animation:r .7s linear infinite;flex-shrink:0}
+.spin{width:16px;height:16px;border:2px solid var(--emp-border);border-top-color:var(--emp-red);border-radius:50%;animation:r .7s linear infinite;flex-shrink:0}
 @keyframes r{to{transform:rotate(360deg)}}
 
-#btn{display:block;width:calc(100% - 28px);margin:8px 14px;padding:6px;background:#0078d4;color:#fff;border:none;border-radius:2px;cursor:pointer;font:500 13px 'Segoe UI',sans-serif}
-#btn:hover{background:#106ebe}
+#btn{display:block;width:calc(100% - 28px);margin:8px 14px;padding:7px;background:var(--emp-red);color:#fff;border:none;border-radius:3px;cursor:pointer;font:600 13px 'Segoe UI',sans-serif;letter-spacing:0.3px}
+#btn:hover{background:var(--emp-red-dark)}
 #btn:disabled{background:#c8c6c4;cursor:default}
 .score-bar{padding:8px 14px;display:none}
 .score-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
-.score-label{font-size:11px;font-weight:600;color:#605e5c}
+.score-label{font-size:11px;font-weight:600;color:var(--emp-gray)}
 .score-value{font-size:13px;font-weight:700}
-.score-track{height:6px;background:#edebe9;border-radius:3px;overflow:hidden}
+.score-track{height:6px;background:var(--emp-border);border-radius:3px;overflow:hidden}
 .score-fill{height:100%;border-radius:3px;transition:width .4s ease}
 
-.section-title{padding:10px 14px 4px;font-size:12px;font-weight:700;color:#0078d4;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #edebe9;margin-top:6px}
+.section-title{padding:10px 14px 4px;font-size:11px;font-weight:700;color:var(--emp-red);text-transform:uppercase;letter-spacing:0.8px;border-top:1px solid var(--emp-border);margin-top:6px}
 
-.stats{display:flex;gap:12px;padding:6px 14px;font-size:11px;color:#605e5c}
+.stats{display:flex;gap:12px;padding:6px 14px;font-size:11px;color:var(--emp-gray)}
 .stats b{font-weight:600}
 
 #integrity,#headers,#attachments,#list{padding:0 14px 8px}
 
-.check{padding:7px 10px;margin-bottom:4px;border-radius:2px;font-size:12px;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
+.check{padding:7px 10px;margin-bottom:4px;border-radius:3px;font-size:12px;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
 .check-icon{flex-shrink:0;font-size:14px;margin-top:1px}
-.check.pass{background:#f3f2f1;border-left:3px solid #107c10}
-.check.fail{background:#fde7e9;border-left:3px solid #a4262c}
-.check.warn{background:#fff4ce;border-left:3px solid #d83b01}
-.check-label{font-weight:600;font-size:11px;color:#605e5c}
-.check-detail{font-size:11px;color:#323130;margin-top:2px}
+.check.pass{background:var(--emp-gray-light);border-left:3px solid var(--emp-green)}
+.check.fail{background:var(--emp-red-bg);border-left:3px solid var(--emp-red)}
+.check.warn{background:var(--emp-orange-bg);border-left:3px solid var(--emp-orange)}
+.check-label{font-weight:600;font-size:11px;color:var(--emp-gray)}
+.check-detail{font-size:11px;color:var(--emp-dark);margin-top:2px}
 
-.link{padding:8px;margin-bottom:4px;border-radius:2px;background:#f3f2f1;border-left:3px solid #107c10;font-size:12px}
-.link.mismatch{border-color:#a4262c;background:#fff3f4}
-.link.suspect{border-color:#d83b01;background:#fff8f0}
+.link{padding:8px;margin-bottom:4px;border-radius:3px;background:var(--emp-gray-light);border-left:3px solid var(--emp-green);font-size:12px}
+.link.mismatch{border-color:var(--emp-red);background:var(--emp-red-bg)}
+.link.suspect{border-color:var(--emp-orange);background:var(--emp-orange-bg)}
 .lbl{font-weight:500;margin-bottom:2px;word-break:break-all}
-.url{color:#605e5c;font-size:11px;word-break:break-all}
-.real{color:#a4262c;font-size:11px;margin-top:4px;line-height:1.4}
-.warn-line{color:#d83b01;font-size:11px;margin-top:3px;line-height:1.4}
+.url{color:var(--emp-gray);font-size:11px;word-break:break-all}
+.real{color:var(--emp-red);font-size:11px;margin-top:4px;line-height:1.4}
+.warn-line{color:var(--emp-orange);font-size:11px;margin-top:3px;line-height:1.4}
 .tag{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;margin-top:4px}
-.tag.ok{background:#dff6dd;color:#107c10}
-.tag.ko{background:#fde7e9;color:#a4262c}
-.tag.warn{background:#fff4ce;color:#8a6914}
+.tag.ok{background:var(--emp-green-bg);color:var(--emp-green)}
+.tag.ko{background:var(--emp-red-bg);color:var(--emp-red)}
+.tag.warn{background:var(--emp-orange-bg);color:var(--emp-orange)}
 
-.link-inspect{color:#605e5c;text-decoration:underline;text-decoration-style:dotted;word-break:break-all}
-.link-inspect:hover{color:#0078d4}
-.empty{padding:10px 14px;color:#605e5c;font-size:12px;font-style:italic}
-.foot{padding:8px 14px;font-size:10px;color:#a19f9d;text-align:center}
+.link-inspect{color:var(--emp-gray);text-decoration:underline;text-decoration-style:dotted;word-break:break-all}
+.link-inspect:hover{color:var(--emp-red)}
+.empty{padding:10px 14px;color:var(--emp-gray);font-size:12px;font-style:italic}
+.foot{padding:10px 14px;font-size:10px;color:#999;text-align:center;border-top:1px solid var(--emp-border);margin-top:4px}
 
 /* Dark mode Outlook */
 @media (prefers-color-scheme: dark) {
@@ -120,11 +137,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:#323130;ba
 <div class="stats">
   <span>Liens : <b id="c-total">-</b></span>
   <span>OK : <b id="c-ok">-</b></span>
-  <span>Suspects : <b id="c-ko" style="color:#a4262c">-</b></span>
+  <span>Suspects : <b id="c-ko" style="color:var(--emp-red)">-</b></span>
 </div>
 <div id="list"></div>
 
-<div class="foot">Analyse 100% locale &middot; aucune donnee transmise &middot; EMPIRYS &middot; v<span id="ver">1.1.0</span></div>
+<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.1.0</span></div>
 
 <script>
 'use strict';
@@ -288,7 +305,7 @@ function renderLinks(links) {
       h += '<div class="url">&rarr; ' + esc(trunc(l.href, 120)) + '</div>';
     }
     if (l.safelinks) {
-      h += '<div class="url" style="color:#0078d4;font-style:italic">&#128737; URL deballee depuis SafeLinks</div>';
+      h += '<div class="url" style="color:var(--emp-red);font-style:italic">&#128737; URL deballee depuis SafeLinks</div>';
     }
     if (l.isMismatch) {
       h += '<div class="real">&#9888; ' + esc(l.reason) + '</div>';
@@ -318,10 +335,10 @@ function renderScore(score, links) {
   track.setAttribute('aria-valuenow', String(score));
 
   var color;
-  if (score > 90)       color = '#107c10';
-  else if (score >= 75) color = '#0078d4';
-  else if (score >= 50) color = '#d83b01';
-  else if (score >= 25) color = '#a4262c';
+  if (score > 90)       color = '#2E7D32';
+  else if (score >= 75) color = '#C8102E';
+  else if (score >= 50) color = '#E65100';
+  else if (score >= 25) color = '#C62828';
   else                  color = '#7f1d1d';
   val.style.color = color;
   fill.style.width = score + '%';
