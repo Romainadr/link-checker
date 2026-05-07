@@ -356,6 +356,91 @@
     return reasons.length > 0 ? reasons : null;
   }
 
+  /* Entropie domaine : detecte les domaines jetables / generes (lk4xz.com, a3b-c9d.xyz) */
+  function checkDomainEntropy(domain) {
+    if (!domain || isTrustedDomain(domain)) return null;
+    var base = domain.split('.')[0];
+    if (!base || base.length < 4) return null;
+    var reasons = [];
+
+    /* Longueur anormale (>20 chars dans le label principal) */
+    if (base.length > 20) {
+      reasons.push('Domaine anormalement long (' + base.length + ' caracteres)');
+    }
+
+    /* Ratio consonnes/voyelles tres desequilibre → domaine genere */
+    var vowels = (base.match(/[aeiouy]/gi) || []).length;
+    var consonants = (base.match(/[bcdfghjklmnpqrstvwxz]/gi) || []).length;
+    var letters = vowels + consonants;
+    if (letters >= 5 && vowels > 0) {
+      var cvRatio = consonants / vowels;
+      if (cvRatio > 5) {
+        reasons.push('Domaine a entropie elevee (peu de voyelles, probablement genere)');
+      }
+    } else if (letters >= 5 && vowels === 0) {
+      reasons.push('Domaine sans voyelle (probablement genere)');
+    }
+
+    /* Chiffres excessifs dans le label */
+    var digits = (base.match(/\d/g) || []).length;
+    if (letters > 0 && digits / base.length > 0.4) {
+      reasons.push('Domaine avec exces de chiffres (' + digits + '/' + base.length + ')');
+    }
+
+    /* Tirets multiples (>2) → pattern DGA / obfuscation */
+    var hyphens = (base.match(/-/g) || []).length;
+    if (hyphens > 2) {
+      reasons.push('Domaine avec ' + hyphens + ' tirets (pattern suspect)');
+    }
+
+    return reasons.length > 0 ? reasons : null;
+  }
+
+  /* Homoglyphes / IDN : detecte les domaines punycode et substitutions visuelles */
+  var HOMOGLYPH_MAP = {
+    '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's',
+    '8': 'b', '9': 'g'
+  };
+  var CONFUSABLE_PAIRS = [
+    ['rn', 'm'], ['cl', 'd'], ['vv', 'w'], ['nn', 'nn']
+  ];
+
+  function checkHomoglyphs(hostname, domain) {
+    if (!hostname || isTrustedDomain(domain)) return null;
+    var reasons = [];
+
+    /* Punycode (IDN) : xn-- = caracteres non-ASCII dans le domaine */
+    if (hostname.indexOf('xn--') !== -1) {
+      reasons.push('Domaine IDN (punycode xn--) pouvant masquer des caracteres non-latins');
+    }
+
+    /* Substitutions chiffre/lettre imitant une marque */
+    var base = hostname.split('.')[0].toLowerCase();
+    var decoded = base;
+    for (var digit in HOMOGLYPH_MAP) {
+      if (HOMOGLYPH_MAP.hasOwnProperty(digit)) {
+        decoded = decoded.split(digit).join(HOMOGLYPH_MAP[digit]);
+      }
+    }
+    /* Aussi verifier les paires confusables */
+    for (var p = 0; p < CONFUSABLE_PAIRS.length; p++) {
+      decoded = decoded.split(CONFUSABLE_PAIRS[p][0]).join(CONFUSABLE_PAIRS[p][1]);
+    }
+
+    if (decoded !== base) {
+      /* Apres decodage, est-ce que ca matche une marque connue ? */
+      for (var j = 0; j < BRAND_NAMES.length; j++) {
+        var brand = BRAND_NAMES[j];
+        if (decoded.indexOf(brand) !== -1 && base.indexOf(brand) === -1) {
+          reasons.push('Possible usurpation par homoglyphe : "' + base + '" ressemble a "' + brand + '"');
+          break;
+        }
+      }
+    }
+
+    return reasons.length > 0 ? reasons : null;
+  }
+
   /* ================================================================
      PARSING MAIL (single pass DOM)
      ================================================================ */
@@ -435,6 +520,24 @@
         suspicious = true;
         for (var r = 0; r < suspReasons.length; r++) {
           if (warnings.indexOf(suspReasons[r]) === -1) warnings.push(suspReasons[r]);
+        }
+      }
+
+      /* Check 6 : entropie domaine (DGA, jetable) */
+      var entropyReasons = checkDomainEntropy(hrefDomain);
+      if (entropyReasons && !trusted) {
+        suspicious = true;
+        for (var e = 0; e < entropyReasons.length; e++) {
+          if (warnings.indexOf(entropyReasons[e]) === -1) warnings.push(entropyReasons[e]);
+        }
+      }
+
+      /* Check 7 : homoglyphes / punycode (IDN) */
+      var homoReasons = checkHomoglyphs(hrefHostname, hrefDomain);
+      if (homoReasons && !trusted) {
+        suspicious = true;
+        for (var hg = 0; hg < homoReasons.length; hg++) {
+          if (warnings.indexOf(homoReasons[hg]) === -1) warnings.push(homoReasons[hg]);
         }
       }
 
@@ -629,7 +732,7 @@
      INTEGRITE MAIL
      ================================================================ */
 
-  function checkIntegrity(senderEmail, subject, bodyText, links, hasSuspectLinks, headerChecks) {
+  function checkIntegrity(senderEmail, displayName, subject, bodyText, bodyHtml, links, hasSuspectLinks, headerChecks) {
     var checks = [];
     var senderDomain = getDomainFromEmail(senderEmail);
 
@@ -706,6 +809,53 @@
       checks.push({ id: 'ext-domains', label: 'Domaines de destination', status: 'pass', detail: 'Aucun domaine suspect detecte dans les liens' });
     }
 
+    /* 5. Display Name spoofing */
+    if (displayName && senderEmail) {
+      var dnEmailMatch = displayName.match(/([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/);
+      if (dnEmailMatch) {
+        var fakeEmail = dnEmailMatch[1].toLowerCase();
+        if (fakeEmail !== senderEmail) {
+          checks.push({ id: 'display-spoof', label: 'Display Name usurpe', status: 'fail',
+            detail: 'Le nom affiche contient "' + fakeEmail + '" mais l\'adresse reelle est ' + senderEmail });
+        }
+      }
+    }
+
+    /* 6. Ratio texte / HTML (detection mail 100% image) */
+    if (bodyHtml && links.length > 0) {
+      var textLen = (bodyText || '').replace(/\s+/g, '').length;
+      var htmlLen = bodyHtml.length;
+      if (htmlLen > 500 && textLen > 0) {
+        var ratio = textLen / htmlLen;
+        if (ratio < 0.05) {
+          checks.push({ id: 'img-ratio', label: 'Mail majoritairement image', status: 'warn',
+            detail: 'Tres peu de texte (' + Math.round(ratio * 100) + '%) pour ' + links.length + ' lien(s) — pattern phishing possible' });
+        }
+      } else if (htmlLen > 500 && textLen === 0) {
+        checks.push({ id: 'img-ratio', label: 'Mail sans texte', status: 'warn',
+          detail: 'Aucun texte visible, contenu potentiellement en image avec ' + links.length + ' lien(s)' });
+      }
+    }
+
+    /* 7. Coherence expediteur / liens */
+    if (!isOrgDomain(senderDomain) && !isTrustedDomain(senderDomain) && senderDomain && links.length > 0) {
+      var hasLinkToSender = links.some(function (l) {
+        return l.hrefDomain === senderDomain || (l.hrefHostname && l.hrefHostname.indexOf(senderDomain) !== -1);
+      });
+      if (!hasLinkToSender) {
+        var extLinkDomains = [];
+        for (var k = 0; k < links.length; k++) {
+          if (links[k].hrefDomain && extLinkDomains.indexOf(links[k].hrefDomain) === -1 && !isOrgDomain(links[k].hrefDomain)) {
+            extLinkDomains.push(links[k].hrefDomain);
+          }
+        }
+        if (extLinkDomains.length > 0) {
+          checks.push({ id: 'sender-link', label: 'Coherence expediteur/liens', status: 'warn',
+            detail: 'Expediteur ' + senderDomain + ' mais aucun lien ne pointe vers ce domaine' });
+        }
+      }
+    }
+
     return checks;
   }
 
@@ -733,6 +883,9 @@
         case 'subject':        if (c.status === 'warn') score -= 5;  break;
         case 'body':           if (c.status === 'fail') score -= 25; else if (c.status === 'warn') score -= 10; break;
         case 'ext-domains':    if (c.status === 'fail') score -= 25; else if (c.status === 'warn') score -= 5;  break;
+        case 'display-spoof':  if (c.status === 'fail') score -= 25; break;
+        case 'img-ratio':      if (c.status === 'warn') score -= 10; break;
+        case 'sender-link':    if (c.status === 'warn') score -= 5;  break;
       }
     }
     var mmCount = 0, mmPen = 0, suspPen = 0;
@@ -750,7 +903,7 @@
      ================================================================ */
 
   function analyze(input) {
-    /* input: { from, subject, bodyHtml, mimeHeaders, item } */
+    /* input: { from, fromDisplayName, subject, bodyHtml, mimeHeaders, item } */
     var body = parseBody(input.bodyHtml || '');
     var rawLinks = extractLinks(body.doc);
     var links = analyzeLinks(rawLinks);
@@ -758,7 +911,7 @@
 
     var headers = analyzeHeaders(input.mimeHeaders);
     var attachments = analyzeAttachments(input.item);
-    var integrity = checkIntegrity(input.from, input.subject, body.text, links, hasSuspect, headers);
+    var integrity = checkIntegrity(input.from, input.fromDisplayName || '', input.subject, body.text, input.bodyHtml || '', links, hasSuspect, headers);
 
     var allChecks = integrity.concat(headers).concat(attachments);
     var score = computeScore(allChecks, links);
