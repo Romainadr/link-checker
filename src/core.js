@@ -168,6 +168,27 @@
   ]);
 
   /* ================================================================
+     CONFIGURATION MULTI-TENANT
+     Etend les referentiels au runtime (additif uniquement, jamais de
+     suppression : impossible de degrader la detection par config).
+     ================================================================ */
+
+  function configure(cfg) {
+    if (!cfg) return;
+    function addAll(set, arr) {
+      if (!arr || !arr.length) return;
+      for (var i = 0; i < arr.length; i++) {
+        var v = String(arr[i] || '').trim().toLowerCase();
+        if (v) set.add(v);
+      }
+    }
+    addAll(ORG_DOMAINS, cfg.orgDomains);
+    addAll(TRUSTED_ROOT, cfg.orgDomains);      /* un domaine org est aussi trusted */
+    addAll(TRUSTED_ROOT, cfg.trustedRoots);
+    addAll(TRUSTED_HOSTNAMES, cfg.trustedHostnames);
+  }
+
+  /* ================================================================
      HELPERS
      ================================================================ */
 
@@ -203,6 +224,14 @@
     if (!hostname) return '';
     var p = hostname.split('.');
     return p.length >= 2 ? p[p.length - 1] : '';
+  }
+
+  /* IPv4 : 1.2.3.4 — IPv6 : ::1, 2001:db8::1, avec ou sans crochets */
+  function isIpAddress(hostname) {
+    if (!hostname) return false;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return true;
+    var h = hostname.replace(/^\[|\]$/g, '');
+    return h.indexOf(':') !== -1 && /^[0-9a-fA-F:]+$/.test(h);
   }
 
   function isOrgDomain(domain) { return ORG_DOMAINS.has(domain); }
@@ -483,6 +512,12 @@
 
       var mismatch = false, suspicious = false, reason = '';
       var warnings = [];
+
+      /* Check 0 : adresse IP brute dans l'URL */
+      if (isIpAddress(hrefHostname)) {
+        suspicious = true;
+        warnings.push('Lien vers une adresse IP brute (' + hrefHostname + ') — aucun service legitime n\'utilise ce format');
+      }
 
       var textIsEmail = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(text);
       if (!textIsEmail && !trusted && looksLikeUrl(text)) {
@@ -872,7 +907,7 @@
         case 'scl':            if (c.status === 'fail') score -= 25; else if (c.status === 'warn') score -= 10; break;
         case 'bcl':            if (c.status === 'fail') score -= 15; else if (c.status === 'warn') score -= 5;  break;
         case 'eop-cat':        if (c.status === 'fail') score -= 30; else if (c.status === 'warn') score -= 10; break;
-        case 'eop-phsh':       if (c.status === 'fail') score -= 20; break;
+        case 'eop-phsh':       if (c.status === 'fail') score -= 30; break;
         case 'auth':           if (c.status === 'fail') score -= 20; else if (c.status === 'warn') score -= 10; break;
         case 'reply-to':       if (c.status === 'fail') score -= 20; break;
         case 'attach-double':  if (c.status === 'fail') score -= 30; break;
@@ -919,14 +954,16 @@
   }
 
   window.LC = {
-    VERSION: '1.1.0',
+    VERSION: '1.2.0',
     analyze: analyze,
+    configure: configure,
     getDomain: getDomain,
     getHostname: getHostname,
     isTrustedDomain: isTrustedDomain,
     isTrustedHostname: isTrustedHostname,
     isOrgDomain: isOrgDomain,
     isSaasPlatformDomain: isSaasPlatformDomain,
+    isIpAddress: isIpAddress,
     isSchemeSafe: isSchemeSafe,
     unwrapSafeLinks: unwrapSafeLinks,
     normalizeText: normalizeText,

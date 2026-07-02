@@ -1,0 +1,9 @@
+{
+  "_comment": "Template de config client Link Checker. Copier vers <slug>.json. Tout est ADDITIF : ces listes s'ajoutent aux referentiels de core.js, elles ne peuvent rien retirer.",
+  "_orgDomains": "Domaines mail du client : consideres internes ET de confiance. Le domaine de la boite de l'utilisateur est deja ajoute automatiquement au runtime.",
+  "orgDomains": ["client.com", "client.lu"],
+  "_trustedRoots": "Domaines (eTLD+1) de partenaires/outils de confiance du client. Jamais de plateforme multi-tenant ici (sharepoint.com, azurewebsites.net...).",
+  "trustedRoots": [],
+  "_trustedHostnames": "Trust au niveau hostname complet, seul moyen de whitelister un sous-domaine de plateforme multi-tenant.",
+  "trustedHostnames": ["client.sharepoint.com", "client-my.sharepoint.com"]
+}

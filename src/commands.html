@@ -22,6 +22,15 @@
     var item = Office.context.mailbox.item;
     if (!item) { event.completed(); return; }
 
+    /* Multi-tenant : le domaine de la boite de l'utilisateur devient
+       domaine interne (meme logique que taskpane.html). */
+    try {
+      var up = Office.context.mailbox.userProfile;
+      var em = (up && up.emailAddress) ? String(up.emailAddress) : '';
+      var at = em.indexOf('@');
+      if (at > 0) window.LC.configure({ orgDomains: [em.slice(at + 1).toLowerCase()] });
+    } catch (eCfg) {}
+
     var senderEmail = '';
     var subject = '';
     try {

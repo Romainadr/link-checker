@@ -141,7 +141,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-
 </div>
 <div id="list"></div>
 
-<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.1.0</span></div>
+<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.2.0</span></div>
 
 <script>
 'use strict';
@@ -154,6 +154,30 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-
 var currentItemId = null;
 var runToken = 0;          // guard contre les runs concurrents
 var supportsMailbox18 = false;
+var ANALYZE_TIMEOUT_MS = 20000;
+
+/* Config multi-tenant :
+   1. auto-org : le domaine de la boite de l'utilisateur devient domaine interne
+   2. config client statique optionnelle chargee via ?client=<slug> (clients/<slug>.json)
+   Ne bloque jamais l'analyse : timeout 3s puis defaults. */
+function loadClientConfig(done) {
+  try {
+    var up = Office.context.mailbox.userProfile;
+    var em = (up && up.emailAddress) ? String(up.emailAddress) : '';
+    var at = em.indexOf('@');
+    if (at > 0) window.LC.configure({ orgDomains: [em.slice(at + 1).toLowerCase()] });
+  } catch (e) {}
+
+  var m = /[?&]client=([a-z0-9\-]+)/i.exec(location.search);
+  if (!m || typeof fetch !== 'function') { done(); return; }
+  var settled = false;
+  function finish() { if (!settled) { settled = true; done(); } }
+  setTimeout(finish, 3000);
+  fetch('../clients/' + m[1].toLowerCase() + '.json', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (cfg) { if (cfg) window.LC.configure(cfg); finish(); })
+    .catch(finish);
+}
 
 Office.onReady(function (info) {
   if (info.host !== Office.HostType.Outlook) return;
@@ -164,10 +188,15 @@ Office.onReady(function (info) {
 
   document.getElementById('btn').addEventListener('click', run);
 
-  if (Office.context.mailbox.item) {
-    currentItemId = Office.context.mailbox.item.itemId;
-    run();
-  }
+  loadClientConfig(function () {
+    if (Office.context.mailbox.item) {
+      currentItemId = Office.context.mailbox.item.itemId;
+      run();
+    } else {
+      setBanner('ko', '&#10007;', 'Aucun element selectionne', 'Ouvrez un mail puis relancez l\'analyse.');
+      document.getElementById('btn').disabled = false;
+    }
+  });
 
   /* Pinning : l'utilisateur navigue d'un mail a l'autre sans fermer le taskpane. */
   if (Office.context.mailbox.addHandlerAsync) {
@@ -215,12 +244,25 @@ function run() {
   var bodyHtml = null;
   var mimeHeaders = null;
   var pending = 2;
+  var usedTextFallback = false;
+
+  /* Watchdog : jamais de spinner infini si un callback Office ne revient pas
+     (observe sur Outlook mobile). */
+  var watchdog = setTimeout(function () {
+    if (myToken !== runToken || pending <= 0) return;
+    pending = -999;
+    btn.disabled = false;
+    setBanner('ko', '&#10007;', 'Delai d\'analyse depasse',
+      'Le client Outlook n\'a pas renvoye le contenu du mail. Reessayez.');
+  }, ANALYZE_TIMEOUT_MS);
 
   function onPartReady() {
     pending--;
     if (pending > 0) return;
+    if (pending < 0) return;           /* watchdog deja declenche */
     if (myToken !== runToken) return;  /* un run plus recent est en cours */
 
+    clearTimeout(watchdog);
     btn.disabled = false;
 
     if (!bodyHtml && bodyHtml !== '') {
@@ -228,25 +270,51 @@ function run() {
       return;
     }
 
-    var result = window.LC.analyze({
-      from: senderEmail,
-      fromDisplayName: senderDisplayName,
-      subject: subject,
-      bodyHtml: bodyHtml,
-      mimeHeaders: mimeHeaders,
-      item: item
-    });
+    try {
+      var result = window.LC.analyze({
+        from: senderEmail,
+        fromDisplayName: senderDisplayName,
+        subject: subject,
+        bodyHtml: bodyHtml,
+        mimeHeaders: mimeHeaders,
+        item: item
+      });
 
-    renderChecks('integrity', result.integrity);
-    renderChecks('headers', result.headers);
-    renderChecks('attachments', result.attachments);
-    renderLinks(result.links);
-    renderScore(result.score, result.links);
+      renderChecks('integrity', result.integrity);
+      renderChecks('headers', result.headers);
+      renderChecks('attachments', result.attachments);
+      renderLinks(result.links);
+      if (usedTextFallback) {
+        document.getElementById('list').insertAdjacentHTML('afterbegin',
+          '<div class="empty">Contenu HTML indisponible sur ce client : analyse sur texte brut, liens non verifiables.</div>');
+      }
+      renderScore(result.score, result.links);
+    } catch (e) {
+      /* une erreur JS ne doit jamais laisser le spinner tourner */
+      setBanner('ko', '&#10007;', 'Erreur pendant l\'analyse',
+        (e && e.message) ? String(e.message) : 'Erreur inattendue');
+    }
   }
 
   item.body.getAsync(Office.CoercionType.Html, function (r) {
-    bodyHtml = (r.status === Office.AsyncResultStatus.Succeeded) ? (r.value || '') : null;
-    onPartReady();
+    if (r.status === Office.AsyncResultStatus.Succeeded) {
+      bodyHtml = r.value || '';
+      onPartReady();
+    } else {
+      /* Fallback mobile : certains clients ne renvoient pas le HTML.
+         On retombe sur le texte brut (analyse partielle, sans liens). */
+      try {
+        item.body.getAsync(Office.CoercionType.Text, function (r2) {
+          if (r2.status === Office.AsyncResultStatus.Succeeded) {
+            usedTextFallback = true;
+            bodyHtml = '<div>' + esc(r2.value || '') + '</div>';
+          } else {
+            bodyHtml = null;
+          }
+          onPartReady();
+        });
+      } catch (e2) { bodyHtml = null; onPartReady(); }
+    }
   });
 
   if (supportsMailbox18 && item.getAllInternetHeadersAsync) {
@@ -392,18 +460,13 @@ function setMailNotification(score, totalLinks, suspectLinks) {
   }
   if (msg.length > 150) msg = msg.substring(0, 147) + '...';
 
-  /* Icon par score : bouclier vert/orange/rouge (V1_1 uniquement).
-     Fallback sur Icon.16 generique en V1_0. */
+  /* Icon par score : bouclier vert/orange/rouge, declare dans le bloc V1_1
+     (OWA, nouvel Outlook, mobile). Si le client tourne sur le bloc V1_0
+     (vieux Outlook), le resid lc.* n'existe pas : retry avec Icon.16. */
   var iconResid;
-  if (!supportsMailbox18) {
-    iconResid = 'Icon.16';
-  } else if (score >= 75) {
-    iconResid = 'lc.Notif.Ok';
-  } else if (score >= 50) {
-    iconResid = 'lc.Notif.Warn';
-  } else {
-    iconResid = 'lc.Notif.Danger';
-  }
+  if (score >= 75)      iconResid = 'lc.Notif.Ok';
+  else if (score >= 50) iconResid = 'lc.Notif.Warn';
+  else                  iconResid = 'lc.Notif.Danger';
 
   var notif = {
     type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
@@ -412,7 +475,12 @@ function setMailNotification(score, totalLinks, suspectLinks) {
     persistent: persistent
   };
   try {
-    item.notificationMessages.replaceAsync('linkchecker', notif, function () {});
+    item.notificationMessages.replaceAsync('linkchecker', notif, function (r) {
+      if (r && r.status === Office.AsyncResultStatus.Failed && notif.icon !== 'Icon.16') {
+        notif.icon = 'Icon.16';
+        try { item.notificationMessages.replaceAsync('linkchecker', notif, function () {}); } catch (e) {}
+      }
+    });
   } catch (e) {}
 }
 

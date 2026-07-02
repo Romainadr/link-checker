@@ -1,0 +1,6 @@
+{
+  "_comment": "Config tenant Empirys. Redondant avec les defaults de core.js, sert de reference.",
+  "orgDomains": ["empirys.com", "empirys.lu", "empirys.eu", "empirys.fr"],
+  "trustedRoots": [],
+  "trustedHostnames": ["empirys.sharepoint.com", "empirys-my.sharepoint.com"]
+}
