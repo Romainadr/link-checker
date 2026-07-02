@@ -31,7 +31,9 @@
     'netflix.com', 'spotify.com', 'paypal.com',
     // Luxembourg / partenaires
     'made-in-luxembourg.com', 'made-in-luxembourg.lu', 'restez-mieux.fr',
-    'ricoh.com', 'ricoh.lu'
+    'ricoh.com', 'ricoh.lu',
+    // Distributeurs / fournisseurs IT (Arrow ArrowSphere)
+    'arrow.com', 'arrowsphere.com', 'arrowxsp.com'
   ]);
 
   /* Plateformes SaaS multi-tenant : n'importe qui y publie un sous-domaine.
@@ -1063,7 +1065,7 @@
   }
 
   window.LC = {
-    VERSION: '1.3.1',
+    VERSION: '1.3.2',
     analyze: analyze,
     configure: configure,
     getReportEmail: function () { return REPORT_EMAIL; },
