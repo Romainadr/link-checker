@@ -31,7 +31,7 @@
     'netflix.com', 'spotify.com', 'paypal.com',
     // Luxembourg / partenaires
     'made-in-luxembourg.com', 'made-in-luxembourg.lu', 'restez-mieux.fr',
-    'ricoh.com', 'ricoh.lu',
+    'ricoh.com', 'ricoh.lu', 'rcarre.com',
     // Distributeurs / fournisseurs IT (Arrow ArrowSphere)
     'arrow.com', 'arrowsphere.com', 'arrowxsp.com'
   ]);
@@ -315,6 +315,16 @@
           next = u.searchParams.get('a');
         } else if (h.endsWith('clicktime.symantec.com')) {
           next = u.searchParams.get('u');
+        } else if (h === 'protection.sophos.com' || h.endsWith('.protection.sophos.com')) {
+          /* Sophos Email : ?d=<domaine affiche>&u=<URL cible en base64url> */
+          var sophosU = u.searchParams.get('u');
+          if (sophosU) {
+            try {
+              var b64 = sophosU.replace(/-/g, '+').replace(/_/g, '/');
+              while (b64.length % 4) b64 += '=';
+              next = atob(b64);
+            } catch (eSophos) {}
+          }
         }
       } catch (e) { break; }
       if (!next || next === current) break;
@@ -1065,7 +1075,7 @@
   }
 
   window.LC = {
-    VERSION: '1.3.2',
+    VERSION: '1.3.3',
     analyze: analyze,
     configure: configure,
     getReportEmail: function () { return REPORT_EMAIL; },
