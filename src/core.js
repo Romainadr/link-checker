@@ -160,6 +160,11 @@
     'zip', 'rar', '7z', 'tar', 'gz', 'cab', 'arj', 'ace'
   ]);
 
+  /* HTML smuggling / SVG pieges : vecteurs majeurs 2024-2026 */
+  var HTML_SMUGGLING_EXTENSIONS = new Set([
+    'html', 'htm', 'xhtml', 'shtml', 'svg'
+  ]);
+
   var GENERIC_ATTACHMENT_NAMES = new Set([
     'document', 'fichier', 'file', 'invoice', 'facture',
     'scan', 'copie', 'copy', 'payment', 'paiement',
@@ -172,6 +177,9 @@
      Etend les referentiels au runtime (additif uniquement, jamais de
      suppression : impossible de degrader la detection par config).
      ================================================================ */
+
+  /* Adresse de signalement (bouton "Signaler"), surchargeable par tenant */
+  var REPORT_EMAIL = 'soc@empirys.com';
 
   function configure(cfg) {
     if (!cfg) return;
@@ -186,6 +194,9 @@
     addAll(TRUSTED_ROOT, cfg.orgDomains);      /* un domaine org est aussi trusted */
     addAll(TRUSTED_ROOT, cfg.trustedRoots);
     addAll(TRUSTED_HOSTNAMES, cfg.trustedHostnames);
+    if (cfg.reportEmail && String(cfg.reportEmail).indexOf('@') > 0) {
+      REPORT_EMAIL = String(cfg.reportEmail).trim();
+    }
   }
 
   /* ================================================================
@@ -385,6 +396,65 @@
     return reasons.length > 0 ? reasons : null;
   }
 
+  /* Distance de Damerau-Levenshtein (variante OSA) : la transposition de
+     deux caracteres adjacents (empYRis/empIRys) compte 1, pas 2. C'est le
+     typosquat le plus courant, Levenshtein simple le raterait. */
+  function editDistance(a, b) {
+    if (a === b) return 0;
+    var la = a.length, lb = b.length;
+    if (!la) return lb;
+    if (!lb) return la;
+    var prev2 = [], prev = [], cur = [], i, j, t;
+    for (j = 0; j <= lb; j++) prev[j] = j;
+    for (i = 1; i <= la; i++) {
+      cur[0] = i;
+      for (j = 1; j <= lb; j++) {
+        cur[j] = Math.min(
+          prev[j] + 1,
+          cur[j - 1] + 1,
+          prev[j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1)
+        );
+        if (i > 1 && j > 1 &&
+            a.charAt(i - 1) === b.charAt(j - 2) &&
+            a.charAt(i - 2) === b.charAt(j - 1)) {
+          cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+        }
+      }
+      t = prev2; prev2 = prev; prev = cur; cur = t;
+    }
+    return prev[lb];
+  }
+
+  /* Lookalike expediteur : domaine externe imitant un domaine interne du
+     tenant (typosquatting empyris.com, ou TLD swap empirys.co).
+     ORG_DOMAINS etant alimente par tenant (auto-org + config), le check
+     s'adapte automatiquement a chaque client. */
+  function checkLookalikeSender(senderDomain) {
+    if (!senderDomain) return null;
+    if (ORG_DOMAINS.has(senderDomain) || isTrustedDomain(senderDomain)) return null;
+    var senderBase = senderDomain.split('.')[0];
+    var hit = null;
+    ORG_DOMAINS.forEach(function (org) {
+      if (hit && hit.strong) return;
+      var orgBase = org.split('.')[0];
+      if (senderBase === orgBase) {
+        hit = { org: org, kind: 'tld', strong: true };   /* meme nom, extension differente */
+        return;
+      }
+      if (orgBase.length >= 5) {
+        var d = editDistance(senderBase, orgBase);
+        if (d === 1) {
+          hit = { org: org, kind: 'typo', strong: true }; /* typosquat quasi certain */
+        } else if (d === 2 && orgBase.length >= 7 && !hit) {
+          /* distance 2 : ressemblance a verifier (risque de faux positif
+             sur un domaine legitime proche), warn plutot que fail */
+          hit = { org: org, kind: 'near', strong: false };
+        }
+      }
+    });
+    return hit;
+  }
+
   /* Entropie domaine : detecte les domaines jetables / generes (lk4xz.com, a3b-c9d.xyz) */
   function checkDomainEntropy(domain) {
     if (!domain || isTrustedDomain(domain)) return null;
@@ -536,6 +606,12 @@
       if (isUrlShortener(hrefHostname)) {
         suspicious = true;
         warnings.push('Lien raccourci (' + hrefHostname + ') masquant la destination reelle');
+      }
+
+      /* Lien non chiffre : plus aucun service legitime ne sert du http */
+      if (/^http:\/\//i.test(href) && !trusted && !isIpAddress(hrefHostname)) {
+        suspicious = true;
+        warnings.push('Lien non chiffre (http) vers un domaine non repertorie');
       }
 
       var tld = getTld(hrefHostname);
@@ -731,7 +807,7 @@
     if (attachments.length === 0) {
       return [{ id: 'attach', label: 'Pieces jointes', status: 'pass', detail: 'Aucune piece jointe' }];
     }
-    var dangerous = [], macro = [], archive = [], dbl = [], generic = [];
+    var dangerous = [], macro = [], archive = [], dbl = [], generic = [], htmlFiles = [];
     for (var i = 0; i < attachments.length; i++) {
       var att = attachments[i];
       var name = (att.name || '').toLowerCase();
@@ -745,6 +821,7 @@
       if (DANGEROUS_EXTENSIONS.has(ext)) dangerous.push(att.name);
       else if (MACRO_EXTENSIONS.has(ext)) macro.push(att.name);
       else if (ARCHIVE_EXTENSIONS.has(ext)) archive.push(att.name);
+      else if (HTML_SMUGGLING_EXTENSIONS.has(ext)) htmlFiles.push(att.name);
 
       var base = parts.slice(0, -1).join('.').replace(/[\d_\-\s]/g, '');
       if (GENERIC_ATTACHMENT_NAMES.has(base)) generic.push(att.name);
@@ -755,6 +832,7 @@
     if (dangerous.length) checks.push({ id: 'attach-danger',  label: 'Extension dangereuse',      status: 'fail', detail: 'Fichier(s) executable(s) ou script(s) : ' + dangerous.join(', ') });
     if (macro.length)     checks.push({ id: 'attach-macro',   label: 'Fichier avec macros',       status: 'warn', detail: 'Document(s) Office avec macros : ' + macro.join(', ') });
     if (archive.length)   checks.push({ id: 'attach-archive', label: 'Archive compressee',        status: 'warn', detail: 'Archive(s) pouvant masquer du contenu malveillant : ' + archive.join(', ') });
+    if (htmlFiles.length) checks.push({ id: 'attach-html',    label: 'Fichier HTML/SVG joint',    status: 'warn', detail: 'Fichier(s) HTML/SVG pouvant contenir du code (HTML smuggling) : ' + htmlFiles.join(', ') });
     if (generic.length)   checks.push({ id: 'attach-generic', label: 'Nom generique',             status: 'warn', detail: 'Nom(s) generique(s) souvent utilise(s) en phishing : ' + generic.join(', ') });
     if (checks.length === 0) {
       checks.push({ id: 'attach', label: 'Pieces jointes', status: 'pass',
@@ -787,6 +865,19 @@
         checks.push({ id: 'sender', label: 'Expediteur', status: 'warn',
           detail: 'Expediteur externe : ' + (senderEmail || 'inconnu') });
       }
+    }
+
+    /* 1bis. Lookalike : domaine externe imitant un domaine interne */
+    var lookalike = checkLookalikeSender(senderDomain);
+    if (lookalike) {
+      var lkDetail;
+      if (lookalike.kind === 'tld')       lkDetail = ' (meme nom, extension differente)';
+      else if (lookalike.kind === 'typo') lkDetail = ' (faute de frappe probable, typosquatting)';
+      else                                lkDetail = ' (2 caracteres d\'ecart, a verifier)';
+      checks.push({ id: 'sender-lookalike', label: 'Domaine expediteur imitant le votre',
+        status: lookalike.strong ? 'fail' : 'warn',
+        detail: '"' + senderDomain + '" ressemble ' + (lookalike.strong ? 'fortement ' : '') +
+          'au domaine interne "' + lookalike.org + '"' + lkDetail });
     }
 
     /* Signal croise */
@@ -904,6 +995,8 @@
       var c = allChecks[i];
       switch (c.id) {
         case 'sender':         if (c.status === 'fail') score -= 25; else if (c.status === 'warn') score -= 10; break;
+        case 'sender-lookalike': if (c.status === 'fail') score -= 30; else if (c.status === 'warn') score -= 10; break;
+        case 'attach-html':    if (c.status === 'warn') score -= 10; break;
         case 'scl':            if (c.status === 'fail') score -= 25; else if (c.status === 'warn') score -= 10; break;
         case 'bcl':            if (c.status === 'fail') score -= 15; else if (c.status === 'warn') score -= 5;  break;
         case 'eop-cat':        if (c.status === 'fail') score -= 30; else if (c.status === 'warn') score -= 10; break;
@@ -954,9 +1047,10 @@
   }
 
   window.LC = {
-    VERSION: '1.2.1',
+    VERSION: '1.3.0',
     analyze: analyze,
     configure: configure,
+    getReportEmail: function () { return REPORT_EMAIL; },
     getDomain: getDomain,
     getHostname: getHostname,
     isTrustedDomain: isTrustedDomain,

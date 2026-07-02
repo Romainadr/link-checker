@@ -46,6 +46,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-
 #btn{display:block;width:calc(100% - 28px);margin:8px 14px;padding:7px;background:var(--emp-red);color:#fff;border:none;border-radius:3px;cursor:pointer;font:600 13px 'Segoe UI',sans-serif;letter-spacing:0.3px}
 #btn:hover{background:var(--emp-red-dark)}
 #btn:disabled{background:#c8c6c4;cursor:default}
+#btn-report{display:none;width:calc(100% - 28px);margin:0 14px 8px;padding:7px;background:transparent;color:var(--emp-red);border:1px solid var(--emp-red);border-radius:3px;cursor:pointer;font:600 13px 'Segoe UI',sans-serif;letter-spacing:0.3px}
+#btn-report:hover{background:var(--emp-red-light)}
 .score-bar{padding:8px 14px;display:none}
 .score-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 .score-label{font-size:11px;font-weight:600;color:var(--emp-gray)}
@@ -123,6 +125,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-
 </div>
 
 <button id="btn" disabled>&#8635; Re-analyser</button>
+<button id="btn-report">&#9873; Signaler ce mail a Empirys</button>
 
 <div class="section-title">Integrite du mail</div>
 <div id="integrity"></div>
@@ -141,7 +144,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-
 </div>
 <div id="list"></div>
 
-<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.2.1</span></div>
+<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.3.0</span></div>
 
 <script>
 'use strict';
@@ -155,6 +158,7 @@ var currentItemId = null;
 var runToken = 0;          // guard contre les runs concurrents
 var supportsMailbox18 = false;
 var ANALYZE_TIMEOUT_MS = 20000;
+var lastAnalysis = null;   // resume de la derniere analyse (bouton Signaler)
 
 /* Config multi-tenant :
    1. auto-org : le domaine de la boite de l'utilisateur devient domaine interne
@@ -187,6 +191,7 @@ Office.onReady(function (info) {
   } catch (e) { supportsMailbox18 = false; }
 
   document.getElementById('btn').addEventListener('click', run);
+  document.getElementById('btn-report').addEventListener('click', reportMail);
 
   loadClientConfig(function () {
     if (Office.context.mailbox.item) {
@@ -222,6 +227,8 @@ function run() {
     document.getElementById(id).innerHTML = '';
   });
   document.getElementById('score-bar').style.display = 'none';
+  document.getElementById('btn-report').style.display = 'none';
+  lastAnalysis = null;
 
   var item = Office.context.mailbox.item;
   if (!item) {
@@ -289,6 +296,18 @@ function run() {
           '<div class="empty">Contenu HTML indisponible sur ce client : analyse sur texte brut, liens non verifiables.</div>');
       }
       renderScore(result.score, result.links);
+
+      /* Bouton Signaler : uniquement si l'API le permet (Mailbox 1.6+, pas mobile) */
+      lastAnalysis = {
+        score: result.score,
+        sender: senderEmail,
+        subject: subject,
+        total: result.links.length,
+        suspects: result.links.filter(function (l) { return l.mismatch; }).length
+      };
+      if (Office.context.mailbox.displayNewMessageForm && item.itemId) {
+        document.getElementById('btn-report').style.display = 'block';
+      }
     } catch (e) {
       /* une erreur JS ne doit jamais laisser le spinner tourner */
       setBanner('ko', '&#10007;', 'Erreur pendant l\'analyse',
@@ -493,6 +512,33 @@ function setBanner(cls, icon, msg, sub) {
   if (sub) h += '<div class="b-sub">' + esc(sub) + '</div>';
   h += '</div>';
   b.innerHTML = h;
+}
+
+/* -- Signalement a l'equipe securite -------------------------------- */
+
+function reportMail() {
+  var mb = Office.context.mailbox;
+  var item = mb.item;
+  if (!mb.displayNewMessageForm || !item || !item.itemId) return;
+
+  var a = lastAnalysis || {};
+  var soc = (window.LC && window.LC.getReportEmail) ? window.LC.getReportEmail() : 'soc@empirys.com';
+  var body =
+    'Mail signale via Link Checker.<br><br>' +
+    '<b>Expediteur :</b> ' + esc(a.sender || 'inconnu') + '<br>' +
+    '<b>Sujet :</b> ' + esc(a.subject || '(sans sujet)') + '<br>' +
+    '<b>Score Link Checker :</b> ' + (a.score != null ? a.score + '/100' : 'n/a') + '<br>' +
+    '<b>Liens analyses :</b> ' + (a.total || 0) + ', dont suspects : ' + (a.suspects || 0) + '<br><br>' +
+    'Le mail original est joint a ce message.';
+
+  try {
+    mb.displayNewMessageForm({
+      toRecipients: [soc],
+      subject: '[Link Checker] Signalement : ' + (a.subject || '(sans sujet)'),
+      htmlBody: body,
+      attachments: [{ type: 'item', name: a.subject || 'mail signale', itemId: item.itemId }]
+    });
+  } catch (e) {}
 }
 
 /* -- Helpers UI ---------------------------------------------------- */

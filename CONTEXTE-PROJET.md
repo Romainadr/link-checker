@@ -2,8 +2,10 @@
 
 Add-in Outlook (Office Add-in, MailApp) développé par EMPIRYS / CyberOne. Il analyse **en local** un mail ouvert (lecture seule) pour détecter le phishing : incohérences de liens, signaux d'usurpation, headers anti-spam, pièces jointes dangereuses, puis affiche un **score de confiance /100**. Aucune donnée n'est transmise à l'extérieur.
 
-- **Version applicative (LC.VERSION)** : `1.2.0`
+- **Version applicative (LC.VERSION)** : `1.3.0`
 - **Version manifest** : `1.0.2.0`
+
+Nouveautés 1.3.0 : check **lookalike expéditeur** (Levenshtein vs ORG_DOMAINS, typosquatting et TLD swap, -30), warn **pièces jointes HTML/SVG** (HTML smuggling, -10), warn **liens http non chiffrés** vers domaines non répertoriés, **bouton « Signaler ce mail »** (`displayNewMessageForm` Mailbox 1.6+, mail original joint, destinataire `reportEmail` configurable par tenant, défaut `soc@empirys.com`, masqué si API indisponible, notamment mobile). Bannière mail : score retiré, `ErrorMessage` rouge natif pour score < 50 (pas d'icône ni persistance sur ce type, contrainte API).
 - **Hébergement** : GitHub Pages `https://romainadr.github.io/link-checker/`
 - **Permissions** : `ReadItem` uniquement
 - **Langue** : fr-FR

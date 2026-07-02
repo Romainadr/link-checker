@@ -5,5 +5,7 @@
   "_trustedRoots": "Domaines (eTLD+1) de partenaires/outils de confiance du client. Jamais de plateforme multi-tenant ici (sharepoint.com, azurewebsites.net...).",
   "trustedRoots": [],
   "_trustedHostnames": "Trust au niveau hostname complet, seul moyen de whitelister un sous-domaine de plateforme multi-tenant.",
-  "trustedHostnames": ["client.sharepoint.com", "client-my.sharepoint.com"]
+  "trustedHostnames": ["client.sharepoint.com", "client-my.sharepoint.com"],
+  "_reportEmail": "Destinataire du bouton 'Signaler ce mail'. Defaut : soc@empirys.com. Peut pointer vers la boite securite du client.",
+  "reportEmail": "soc@empirys.com"
 }
