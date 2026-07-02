@@ -565,13 +565,28 @@
   }
 
   function analyzeLinks(rawLinks) {
-    var results = [];
-    for (var i = 0; i < rawLinks.length; i++) {
-      var rawHref = rawLinks[i].rawHref;
-      var text = rawLinks[i].text;
+    /* Deduplication : le meme lien (meme cible apres deballage + meme texte
+       affiche) present N fois dans le mail ne compte qu'une seule fois pour
+       le score et l'affichage. Compteur d'occurrences conserve.
+       On dedoublonne sur l'URL deballee : deux wrappings SafeLinks differents
+       de la meme cible sont bien fusionnes. */
+    var seen = new Map(), unique = [];
+    for (var u = 0; u < rawLinks.length; u++) {
+      var uHref = unwrapSafeLinks(rawLinks[u].rawHref);
+      if (!isSchemeSafe(uHref)) continue;
+      var key = uHref + ' ' + rawLinks[u].text;
+      var entry = seen.get(key);
+      if (entry) { entry.occurrences++; continue; }
+      entry = { rawHref: rawLinks[u].rawHref, href: uHref, text: rawLinks[u].text, occurrences: 1 };
+      seen.set(key, entry);
+      unique.push(entry);
+    }
 
-      var href = unwrapSafeLinks(rawHref);
-      if (!isSchemeSafe(href)) continue;
+    var results = [];
+    for (var i = 0; i < unique.length; i++) {
+      var rawHref = unique[i].rawHref;
+      var text = unique[i].text;
+      var href = unique[i].href;
       var isSafeLinks = (href !== rawHref);
 
       var hrefHostname = getHostname(href);
@@ -666,7 +681,8 @@
         reason: reason,
         warnings: warnings,
         safelinks: isSafeLinks,
-        trusted: trusted
+        trusted: trusted,
+        occurrences: unique[i].occurrences
       });
     }
     return results;
@@ -1047,7 +1063,7 @@
   }
 
   window.LC = {
-    VERSION: '1.3.0',
+    VERSION: '1.3.1',
     analyze: analyze,
     configure: configure,
     getReportEmail: function () { return REPORT_EMAIL; },

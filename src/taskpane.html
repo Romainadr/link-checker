@@ -74,6 +74,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-
 .link.mismatch{border-color:var(--emp-red);background:var(--emp-red-bg)}
 .link.suspect{border-color:var(--emp-orange);background:var(--emp-orange-bg)}
 .lbl{font-weight:500;margin-bottom:2px;word-break:break-all}
+.occ{font-weight:400;color:var(--emp-gray);font-size:11px;white-space:nowrap}
 .url{color:var(--emp-gray);font-size:11px;word-break:break-all}
 .real{color:var(--emp-red);font-size:11px;margin-top:4px;line-height:1.4}
 .warn-line{color:var(--emp-orange);font-size:11px;margin-top:3px;line-height:1.4}
@@ -144,7 +145,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-
 </div>
 <div id="list"></div>
 
-<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.3.0</span></div>
+<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.3.1</span></div>
 
 <script>
 'use strict';
@@ -385,7 +386,8 @@ function renderLinks(links) {
     var l = sorted[i];
     var cls = l.mismatch ? (l.isMismatch ? ' mismatch' : ' suspect') : '';
     h += '<div class="link' + cls + '">';
-    h += '<div class="lbl">' + esc(trunc(l.text, 80)) + '</div>';
+    h += '<div class="lbl">' + esc(trunc(l.text, 80)) +
+      (l.occurrences > 1 ? ' <span class="occ">(&times;' + l.occurrences + ' dans le mail)</span>' : '') + '</div>';
 
     /* Filet schema : on ne rend un <a> que si http(s) — core.js le garantit
        deja, on reverifie ici pour defense en profondeur. */
