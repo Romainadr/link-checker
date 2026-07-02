@@ -141,7 +141,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--emp-
 </div>
 <div id="list"></div>
 
-<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.2.0</span></div>
+<div class="foot">Analyse 100% locale &middot; aucune donnee transmise<br>&epsilon;mpirys &middot; CyberOne &middot; v<span id="ver">1.2.1</span></div>
 
 <script>
 'use strict';
@@ -443,40 +443,41 @@ function setMailNotification(score, totalLinks, suspectLinks) {
   var item = Office.context.mailbox.item;
   if (!item || !item.notificationMessages) return;
 
-  var msg, persistent = false;
-  if (score > 90) {
-    msg = 'Link Checker : Confiance elevee (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
-  } else if (score >= 75) {
-    msg = 'Link Checker : Confiance correcte (' + score + '/100) — ' + totalLinks + ' lien(s) verifies';
-  } else if (score >= 50) {
-    msg = 'Link Checker : Vigilance recommandee (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s)';
-    persistent = true;
-  } else if (score >= 25) {
-    msg = 'Link Checker : Risque eleve (' + score + '/100) — ' + suspectLinks + ' lien(s) suspect(s) detecte(s)';
-    persistent = true;
+  /* Couleurs : la bannière est rendue par Outlook, pas personnalisable.
+     Deux leviers seulement :
+     - InformationalMessage : fond neutre + notre icone bouclier (vert/orange)
+     - ErrorMessage : bandeau rouge natif (score < 50). N'accepte ni icon
+       ni persistent (exception sinon), et ne persiste pas entre sessions. */
+  var notif;
+  if (score >= 50) {
+    var msg, persistent = false, iconResid;
+    if (score >= 75) {
+      msg = 'Link Checker : confiance ' + (score > 90 ? 'elevee' : 'correcte') + ', ' + totalLinks + ' lien(s) verifie(s)';
+      iconResid = 'lc.Notif.Ok';
+    } else {
+      msg = 'Link Checker : vigilance recommandee, ' + suspectLinks + ' lien(s) suspect(s)';
+      iconResid = 'lc.Notif.Warn';
+      persistent = true;
+    }
+    if (msg.length > 150) msg = msg.substring(0, 147) + '...';
+    notif = {
+      type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
+      icon: iconResid,
+      message: msg,
+      persistent: persistent
+    };
   } else {
-    msg = 'Link Checker : RISQUE CRITIQUE (' + score + '/100) — forts signaux de phishing';
-    persistent = true;
+    var em = (score >= 25)
+      ? 'Link Checker : risque eleve, signaux de phishing, ' + suspectLinks + ' lien(s) suspect(s)'
+      : 'Link Checker : RISQUE CRITIQUE, forts signaux de phishing, ' + suspectLinks + ' lien(s) suspect(s)';
+    if (em.length > 150) em = em.substring(0, 147) + '...';
+    notif = { type: Office.MailboxEnums.ItemNotificationMessageType.ErrorMessage, message: em };
   }
-  if (msg.length > 150) msg = msg.substring(0, 147) + '...';
 
-  /* Icon par score : bouclier vert/orange/rouge, declare dans le bloc V1_1
-     (OWA, nouvel Outlook, mobile). Si le client tourne sur le bloc V1_0
-     (vieux Outlook), le resid lc.* n'existe pas : retry avec Icon.16. */
-  var iconResid;
-  if (score >= 75)      iconResid = 'lc.Notif.Ok';
-  else if (score >= 50) iconResid = 'lc.Notif.Warn';
-  else                  iconResid = 'lc.Notif.Danger';
-
-  var notif = {
-    type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-    icon: iconResid,
-    message: msg,
-    persistent: persistent
-  };
   try {
     item.notificationMessages.replaceAsync('linkchecker', notif, function (r) {
-      if (r && r.status === Office.AsyncResultStatus.Failed && notif.icon !== 'Icon.16') {
+      /* Vieux Outlook (bloc V1_0) : le resid lc.* n'existe pas, retry Icon.16 */
+      if (r && r.status === Office.AsyncResultStatus.Failed && notif.icon && notif.icon !== 'Icon.16') {
         notif.icon = 'Icon.16';
         try { item.notificationMessages.replaceAsync('linkchecker', notif, function () {}); } catch (e) {}
       }

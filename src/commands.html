@@ -62,7 +62,7 @@
 
       var notif;
       if (score >= 80) {
-        var m1 = '\u2713 Link Checker : Confiance elevee (' + score + '/100) \u2014 ' + totalLinks + ' lien(s) OK';
+        var m1 = '\u2713 Link Checker : confiance elevee, ' + totalLinks + ' lien(s) OK';
         if (m1.length > 150) m1 = m1.substring(0, 147) + '...';
         notif = {
           type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
@@ -71,7 +71,7 @@
           persistent: false
         };
       } else if (score >= 50) {
-        var m2 = '\u26a0 Link Checker : Vigilance recommandee (' + score + '/100) \u2014 ' + mismatchCount + ' suspect(s)';
+        var m2 = '\u26a0 Link Checker : vigilance recommandee, ' + mismatchCount + ' lien(s) suspect(s)';
         if (m2.length > 150) m2 = m2.substring(0, 147) + '...';
         notif = {
           type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
@@ -80,12 +80,12 @@
           persistent: false
         };
       } else {
-        var m3 = 'Link Checker : RISQUE ELEVE (' + score + '/100) \u2014 Phishing potentiel \u2014 ' + mismatchCount + ' lien(s) suspect(s)';
+        /* ErrorMessage : bandeau rouge natif, n'accepte ni icon ni persistent */
+        var m3 = 'Link Checker : RISQUE ELEVE, phishing potentiel, ' + mismatchCount + ' lien(s) suspect(s)';
         if (m3.length > 150) m3 = m3.substring(0, 147) + '...';
         notif = {
           type: Office.MailboxEnums.ItemNotificationMessageType.ErrorMessage,
-          message: m3,
-          persistent: true
+          message: m3
         };
       }
 

@@ -954,7 +954,7 @@
   }
 
   window.LC = {
-    VERSION: '1.2.0',
+    VERSION: '1.2.1',
     analyze: analyze,
     configure: configure,
     getDomain: getDomain,
