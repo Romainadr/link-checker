@@ -29,6 +29,9 @@
     'airtable.com', 'asana.com', 'trello.com', 'canva.com', 'figma.com',
     'jira.com', 'monday.com', 'shopify.com', 'zoom.us', 'slack.com',
     'netflix.com', 'spotify.com', 'paypal.com',
+    // E-commerce grand public
+    'amazon.com', 'amazon.fr', 'amazon.de', 'amazon.it', 'amazon.es',
+    'amazon.co.uk', 'amazon.nl', 'amazon.be', 'media-amazon.com',
     // Luxembourg / partenaires
     'made-in-luxembourg.com', 'made-in-luxembourg.lu', 'restez-mieux.fr',
     'ricoh.com', 'ricoh.lu', 'rcarre.com',
@@ -1044,10 +1047,16 @@
         case 'sender-link':    if (c.status === 'warn') score -= 5;  break;
       }
     }
-    var mmCount = 0, mmPen = 0, suspPen = 0;
+    /* Liens suspects : penalite une seule fois par domaine. Des liens vers
+       la meme destination avec des tokens de tracking differents echappent
+       a la deduplication exacte mais ne doivent pas empiler les -10. */
+    var mmCount = 0, mmPen = 0, suspPen = 0, suspDomains = new Set();
     for (var j = 0; j < links.length; j++) {
       if (links[j].isMismatch) { mmCount++; mmPen += (mmCount === 1) ? 15 : 10; }
-      else if (links[j].isSuspicious) suspPen += 10;
+      else if (links[j].isSuspicious) {
+        var dk = links[j].hrefDomain || links[j].href;
+        if (!suspDomains.has(dk)) { suspDomains.add(dk); suspPen += 10; }
+      }
     }
     score -= Math.min(40, mmPen);
     score -= Math.min(30, suspPen);
@@ -1075,7 +1084,7 @@
   }
 
   window.LC = {
-    VERSION: '1.3.3',
+    VERSION: '1.3.4',
     analyze: analyze,
     configure: configure,
     getReportEmail: function () { return REPORT_EMAIL; },
