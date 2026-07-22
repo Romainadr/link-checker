@@ -124,6 +124,27 @@
     'connectez-vous', 'log in to your account'
   ];
 
+  /* Fraude bancaire / detournement de salaire (BEC "CEO/payroll fraud").
+     Flag meme sur un expediteur interne : ces demandes viennent souvent
+     d'un compte compromis ou d'un display-name usurpe. FR / EN / LU-DE.
+     Termes choisis sans chevauchement (pas de sous-chaine commune) pour
+     un comptage d'occurrences fiable. */
+  var BANKING_KEYWORDS = [
+    /* Identifiants bancaires (universels) */
+    'rib', 'iban', 'bic', 'swift',
+    /* FR */
+    'compte bancaire', 'coordonnees bancaires', 'coordonnee bancaire',
+    'virement', 'salaire', 'paie', 'domiciliation', 'prelevement',
+    'releve bancaire', 'changement de compte',
+    /* EN */
+    'bank account', 'bank details', 'banking details', 'account number',
+    'wire transfer', 'bank transfer', 'payroll', 'salary', 'direct deposit',
+    'sort code', 'routing number', 'beneficiary',
+    /* LU / DE (courant au Luxembourg) */
+    'bankkonto', 'konto', 'kontonummer', 'iwwerweisung', 'ueberweisung',
+    'gehalt', 'lohn', 'loun'
+  ];
+
   var URL_SHORTENERS = new Set([
     'bit.ly', 'tinyurl.com', 't.co', 'ow.ly', 'goo.gl',
     'is.gd', 'buff.ly', 'adf.ly', 'bl.ink', 'lnkd.in',
@@ -374,6 +395,19 @@
     var hits = new Set(), m;
     while ((m = re.exec(normText)) !== null) hits.add(m[1].toLowerCase());
     return Array.from(hits);
+  }
+
+  /* Comme matchKeywords mais renvoie le nombre d'occurrences par mot-cle
+     (pour distinguer une mention isolee d'une insistance repetee). */
+  function countKeywords(normText, keywords) {
+    var re = buildKeywordRegex(keywords);
+    re.lastIndex = 0;
+    var counts = {}, m;
+    while ((m = re.exec(normText)) !== null) {
+      var k = m[1].toLowerCase();
+      counts[k] = (counts[k] || 0) + 1;
+    }
+    return counts;
   }
 
   /* Plus stricte que l'ancienne : exige une TLD alphabetique finale. */
@@ -946,6 +980,25 @@
       checks.push({ id: 'body', label: 'Contenu du mail', status: 'pass', detail: 'Aucune formulation de phishing detectee' });
     }
 
+    /* 3bis. Fraude bancaire / detournement de salaire (sujet + corps).
+       -10 par mot-cle distinct, -15 si le mot est repete (insistance),
+       plafonne a -50. Actif meme pour un expediteur interne. */
+    var bankingCounts = countKeywords(bodyNorm + ' ' + subjectNorm, BANKING_KEYWORDS);
+    var bankKeys = Object.keys(bankingCounts);
+    if (bankKeys.length) {
+      var bankPen = 0, bankLabels = [];
+      for (var bk = 0; bk < bankKeys.length; bk++) {
+        var kw = bankKeys[bk], repeated = bankingCounts[kw] >= 2;
+        bankPen += repeated ? 15 : 10;
+        bankLabels.push(kw + (repeated ? ' (x' + bankingCounts[kw] + ')' : ''));
+      }
+      if (bankPen > 50) bankPen = 50;
+      checks.push({ id: 'banking', label: 'Termes bancaires / demande de virement',
+        status: bankPen >= 20 ? 'fail' : 'warn',
+        detail: 'Motif possible de fraude (changement de RIB/IBAN, detournement de salaire). Termes detectes : ' + bankLabels.join(', '),
+        penalty: bankPen });
+    }
+
     /* 4. Domaines de destination */
     var linkDomains = [];
     for (var i = 0; i < links.length; i++) {
@@ -1024,6 +1077,8 @@
     var score = 100;
     for (var i = 0; i < allChecks.length; i++) {
       var c = allChecks[i];
+      /* Penalite variable portee par le check (ex. 'banking') */
+      if (typeof c.penalty === 'number') score -= c.penalty;
       switch (c.id) {
         case 'sender':         if (c.status === 'fail') score -= 25; else if (c.status === 'warn') score -= 10; break;
         case 'sender-lookalike': if (c.status === 'fail') score -= 30; else if (c.status === 'warn') score -= 10; break;
@@ -1084,7 +1139,7 @@
   }
 
   window.LC = {
-    VERSION: '1.3.4',
+    VERSION: '1.3.5',
     analyze: analyze,
     configure: configure,
     getReportEmail: function () { return REPORT_EMAIL; },
@@ -1099,6 +1154,7 @@
     unwrapSafeLinks: unwrapSafeLinks,
     normalizeText: normalizeText,
     matchKeywords: matchKeywords,
+    countKeywords: countKeywords,
     looksLikeUrl: looksLikeUrl,
     _constants: {
       ORG_DOMAINS: ORG_DOMAINS,
