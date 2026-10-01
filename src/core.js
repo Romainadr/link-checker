@@ -125,17 +125,19 @@
   ];
 
   /* Fraude bancaire / detournement de salaire (BEC "CEO/payroll fraud").
-     Flag meme sur un expediteur interne : ces demandes viennent souvent
-     d'un compte compromis ou d'un display-name usurpe. FR / EN / LU-DE.
-     Termes choisis sans chevauchement (pas de sous-chaine commune) pour
-     un comptage d'occurrences fiable. */
+     BANKING_KEYWORDS = termes de CONTEXTE : seuls, ils ne penalisent pas
+     (signatures avec IBAN/BIC, echanges normaux d'une fiduciaire ou d'un
+     service paie). Ils ne comptent qu'avec un signal fort de fraude.
+     BANKING_CHANGE = INTENTION de changer des coordonnees bancaires :
+     penalise meme sur un expediteur interne (compte compromis).
+     FR / EN / LU-DE, texte normalise (sans accents, apostrophes -> espace). */
   var BANKING_KEYWORDS = [
     /* Identifiants bancaires (universels) */
     'rib', 'iban', 'bic', 'swift',
     /* FR */
     'compte bancaire', 'coordonnees bancaires', 'coordonnee bancaire',
     'virement', 'salaire', 'paie', 'domiciliation', 'prelevement',
-    'releve bancaire', 'changement de compte',
+    'releve bancaire',
     /* EN */
     'bank account', 'bank details', 'banking details', 'account number',
     'wire transfer', 'bank transfer', 'payroll', 'salary', 'direct deposit',
@@ -143,6 +145,28 @@
     /* LU / DE (courant au Luxembourg) */
     'bankkonto', 'konto', 'kontonummer', 'iwwerweisung', 'ueberweisung',
     'gehalt', 'lohn', 'loun'
+  ];
+
+  var BANKING_CHANGE = [
+    /* FR */
+    'nouveau rib', 'nouvel iban', 'nouveau compte bancaire', 'nouveau numero de compte',
+    'nouvelles coordonnees bancaires', 'nouvelle domiciliation',
+    'changement de rib', 'changement d iban', 'changement de compte',
+    'changement de coordonnees bancaires', 'changement de domiciliation',
+    'modification de rib', 'modification de mes coordonnees bancaires',
+    'modifier mon rib', 'modifier mes coordonnees bancaires',
+    'mettre a jour mes coordonnees bancaires', 'mise a jour de mes coordonnees bancaires',
+    'changer de banque', 'change de banque', 'changer mon rib', 'changer mon compte',
+    /* EN */
+    'new bank account', 'new bank details', 'new account details', 'new iban',
+    'updated bank details', 'update my bank details', 'update our bank details',
+    'change of bank details', 'change my bank details', 'changed my bank',
+    'changed our bank', 'update my direct deposit', 'change my direct deposit',
+    'update my payroll', 'change my payroll',
+    /* DE / LU */
+    'neue bankverbindung', 'neues konto', 'neue kontonummer',
+    'kontoanderung', 'kontoaenderung', 'anderung der bankverbindung',
+    'aenderung der bankverbindung'
   ];
 
   var URL_SHORTENERS = new Set([
@@ -980,25 +1004,6 @@
       checks.push({ id: 'body', label: 'Contenu du mail', status: 'pass', detail: 'Aucune formulation de phishing detectee' });
     }
 
-    /* 3bis. Fraude bancaire / detournement de salaire (sujet + corps).
-       -10 par mot-cle distinct, -15 si le mot est repete (insistance),
-       plafonne a -50. Actif meme pour un expediteur interne. */
-    var bankingCounts = countKeywords(bodyNorm + ' ' + subjectNorm, BANKING_KEYWORDS);
-    var bankKeys = Object.keys(bankingCounts);
-    if (bankKeys.length) {
-      var bankPen = 0, bankLabels = [];
-      for (var bk = 0; bk < bankKeys.length; bk++) {
-        var kw = bankKeys[bk], repeated = bankingCounts[kw] >= 2;
-        bankPen += repeated ? 15 : 10;
-        bankLabels.push(kw + (repeated ? ' (x' + bankingCounts[kw] + ')' : ''));
-      }
-      if (bankPen > 50) bankPen = 50;
-      checks.push({ id: 'banking', label: 'Termes bancaires / demande de virement',
-        status: bankPen >= 20 ? 'fail' : 'warn',
-        detail: 'Motif possible de fraude (changement de RIB/IBAN, detournement de salaire). Termes detectes : ' + bankLabels.join(', '),
-        penalty: bankPen });
-    }
-
     /* 4. Domaines de destination */
     var linkDomains = [];
     for (var i = 0; i < links.length; i++) {
@@ -1064,6 +1069,49 @@
             detail: 'Expediteur ' + senderDomain + ' mais aucun lien ne pointe vers ce domaine' });
         }
       }
+    }
+
+    /* 8. Fraude bancaire / detournement de salaire (sujet + corps).
+       Evalue en dernier pour connaitre tous les autres signaux.
+       - intention de changement + signal fort ou expediteur externe -> fail -35
+       - intention de changement seule (interne / trusted)           -> warn -20
+       - termes de contexte + signal fort                            -> warn -15
+       - termes de contexte seuls                                    -> pass, 0 */
+    var bankText = (bodyNorm + ' ' + subjectNorm).replace(/['\u2019`]/g, ' ');
+    var bankTerms = matchKeywords(bankText, BANKING_KEYWORDS);
+    var bankChange = matchKeywords(bankText, BANKING_CHANGE);
+    if (bankTerms.length || bankChange.length) {
+      var STRONG_FAIL_IDS = { 'sender': 1, 'display-spoof': 1, 'ext-domains': 1, 'body': 1,
+        'reply-to': 1, 'auth': 1, 'eop-phsh': 1, 'eop-cat': 1, 'scl': 1 };
+      var strongSignals = [];
+      checks.concat(headerChecks).forEach(function (c) {
+        if (c.id === 'sender-lookalike' || (c.status === 'fail' && STRONG_FAIL_IDS[c.id])) {
+          if (strongSignals.indexOf(c.label) === -1) strongSignals.push(c.label);
+        }
+      });
+      if (hasSuspectLinks) strongSignals.push('liens suspects');
+      if (subjectHi.length) strongSignals.push('sujet suspect');
+      var externalSender = !isOrgDomain(senderDomain) && !isTrustedDomain(senderDomain);
+      var bankStatus, bankPen, bankDetail;
+      if (bankChange.length && (strongSignals.length || externalSender)) {
+        bankStatus = 'fail'; bankPen = 35;
+        bankDetail = 'Demande de changement de coordonnees bancaires (' + bankChange.join(', ') + ')' +
+          (strongSignals.length ? ' combinee a : ' + strongSignals.join(', ') : ' venant d\'un expediteur externe non repertorie') +
+          '. Ne rien modifier sans verification par un autre canal (telephone connu).';
+      } else if (bankChange.length) {
+        bankStatus = 'warn'; bankPen = 20;
+        bankDetail = 'Demande de changement de coordonnees bancaires (' + bankChange.join(', ') +
+          '). A confirmer par un autre canal avant toute modification (compte interne compromis possible).';
+      } else if (strongSignals.length) {
+        bankStatus = 'warn'; bankPen = 15;
+        bankDetail = 'Termes bancaires (' + bankTerms.join(', ') + ') dans un mail presentant d\'autres signaux : ' +
+          strongSignals.join(', ');
+      } else {
+        bankStatus = 'pass'; bankPen = 0;
+        bankDetail = 'Termes bancaires presents (' + bankTerms.join(', ') + ') sans demande de changement ni autre signal';
+      }
+      checks.push({ id: 'banking', label: 'Termes bancaires / demande de virement',
+        status: bankStatus, detail: bankDetail, penalty: bankPen });
     }
 
     return checks;
@@ -1139,7 +1187,7 @@
   }
 
   window.LC = {
-    VERSION: '1.3.5',
+    VERSION: '1.3.6',
     analyze: analyze,
     configure: configure,
     getReportEmail: function () { return REPORT_EMAIL; },
