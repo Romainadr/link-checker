@@ -1,0 +1,16 @@
+# Manifests clients generes (regenerables via tools/New-ClientManifest.ps1, GUID dans clients/<slug>.json)
+dist/
+
+# Sauvegardes locales
+_backup*/
+
+# Editeurs / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Logs
+*.log

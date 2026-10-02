@@ -2,10 +2,10 @@
 
 Add-in Outlook (Office Add-in, MailApp) développé par EMPIRYS / CyberOne. Il analyse **en local** un mail ouvert (lecture seule) pour détecter le phishing : incohérences de liens, signaux d'usurpation, headers anti-spam, pièces jointes dangereuses, puis affiche un **score de confiance /100**. Aucune donnée n'est transmise à l'extérieur.
 
-- **Version applicative (LC.VERSION)** : `1.3.0`
+- **Version applicative (LC.VERSION)** : `1.3.6` (source de vérité : `src/core.js`, cache-buster `?v=` dans `taskpane.html` à aligner)
 - **Version manifest** : `1.0.2.0`
 
-Nouveautés 1.3.0 : check **lookalike expéditeur** (Levenshtein vs ORG_DOMAINS, typosquatting et TLD swap, -30), warn **pièces jointes HTML/SVG** (HTML smuggling, -10), warn **liens http non chiffrés** vers domaines non répertoriés, **bouton « Signaler ce mail »** (`displayNewMessageForm` Mailbox 1.6+, mail original joint, destinataire `reportEmail` configurable par tenant, défaut `soc@empirys.com`, masqué si API indisponible, notamment mobile). Bannière mail : score retiré, `ErrorMessage` rouge natif pour score < 50 (pas d'icône ni persistance sur ce type, contrainte API).
+Nouveautés 1.3.0 (détail des versions 1.3.1 à 1.3.6 : voir l'historique git) : check **lookalike expéditeur** (Levenshtein vs ORG_DOMAINS, typosquatting et TLD swap, -30), warn **pièces jointes HTML/SVG** (HTML smuggling, -10), warn **liens http non chiffrés** vers domaines non répertoriés, **bouton « Signaler ce mail »** (`displayNewMessageForm` Mailbox 1.6+, mail original joint, destinataire `reportEmail` configurable par tenant, défaut `soc@empirys.com`, masqué si API indisponible, notamment mobile). Bannière mail : score retiré, `ErrorMessage` rouge natif pour score < 50 (pas d'icône ni persistance sur ce type, contrainte API).
 - **Hébergement** : GitHub Pages `https://romainadr.github.io/link-checker/`
 - **Permissions** : `ReadItem` uniquement
 - **Langue** : fr-FR
@@ -16,12 +16,18 @@ Nouveautés 1.3.0 : check **lookalike expéditeur** (Levenshtein vs ORG_DOMAINS,
 ```
 link-checker/
 ├── manifest.xml          Manifest Office Add-in (V1_0 + V1_1 imbriqués)
+├── DEPLOIEMENT.md        Runbook d'onboarding client (New-App Exchange)
+├── CONTEXTE-PROJET.md    Ce fichier
+├── clients/              Config par tenant (<slug>.json) + _template.json
+├── tools/                New-ClientManifest.ps1 (génère dist/manifest-<slug>.xml, non versionné)
 ├── src/
-│   ├── core.js           Logique d'analyse (961 lignes) — expose window.LC
+│   ├── core.js           Logique d'analyse (~1200 lignes), expose window.LC
 │   ├── taskpane.html     UI du volet + glue Office.js (taskpane.js inline)
 │   └── commands.html     FunctionFile + handler onMessageRead (inerte tant que LaunchEvent non déclaré)
 ├── icon-*.png            Jeu d'icônes (16→144) + 3 icônes de notif (ok/warn/danger)
-└── README.md
+├── README.md
+├── .gitattributes        Normalisation des fins de ligne (LF dans le repo)
+└── .gitignore
 ```
 
 Séparation nette : `core.js` ne touche jamais au DOM Outlook ni à `Office.*`. Il prend en entrée des données brutes et renvoie un résultat. `taskpane.html` et `commands.html` font la glue Office.js et le rendu.
@@ -84,9 +90,9 @@ Seuils d'affichage (bannière + notif) : >90 confiance élevée, 75-90 correcte,
 
 Charte Empirys/CyberOne (rouge `#C8102E`), dark mode supporté. Sections : score, intégrité, headers, pièces jointes, liens (triés mismatch d'abord). Garde anti-runs concurrents (`runToken`). Gère le **pinning** via `ItemChanged` (ré-analyse au changement de mail). Notifications mailbox via `notificationMessages.replaceAsync` avec icône bouclier selon score (V1_1) ou fallback `Icon.16` (V1_0).
 
-## État git actuel
+## État git
 
-Branche avec modifs **non commitées** : `manifest.xml`, `src/core.js`, `src/taskpane.html`. Derniers commits : `modif css3`, `modif manifest`, `mdofi core`, `revue de lalgo`. Historique antérieur : ajout déballage double SafeLinks + reply-to + liens cliquables, whitelist Mimecast/Barracuda/Ricoh, TLD suspects, check pièces jointes, scoring.
+Repo de référence : `C:\link-checker`, remote `https://github.com/Romainadr/link-checker.git`, branche `main` (migration vers l'organisation GitHub Empirys prévue). Ne pas travailler dans l'ancienne copie OneDrive (synchro qui corrompt `.git`). Fins de ligne normalisées par `.gitattributes` depuis le 2026-10-02.
 
 ## Multi-tenant (v1.2.0)
 

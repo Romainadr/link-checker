@@ -22,24 +22,34 @@ Deux mécanismes de personnalisation, sans redéploiement de code :
 
 ## Onboarder un nouveau client
 
-Prérequis : PowerShell 5+, droits d'admin global (ou Exchange admin) dans le tenant du client.
+Prérequis : PowerShell 5.1+, module `ExchangeOnlineManagement` v3, git avec accès push au repo, rôle **Exchange Administrator** sur le tenant du client (GDAP suffit).
 
 ```powershell
-cd link-checker
+cd C:\link-checker
+git pull
 .\tools\New-ClientManifest.ps1 -Client acme
 ```
 
 Puis :
 
 1. Compléter `clients/acme.json` : domaines mail du client, `acme.sharepoint.com`, `acme-my.sharepoint.com`, partenaires éventuels.
-2. Publier la config : `git add clients/acme.json dist/ && git commit -m "client acme" && git push` (GitHub Pages sert le JSON en ~1 min).
+2. Publier la config : `git add clients/acme.json && git commit -m "client acme" && git push` (GitHub Pages sert le JSON en ~1 min).
 3. Vérifier que `https://romainadr.github.io/link-checker/clients/acme.json` répond bien en HTTPS.
-4. Déployer le manifest dans le tenant client : **Microsoft 365 admin center → Paramètres → Applications intégrées → Charger des applications personnalisées → Application Office → Charger le manifest** (`dist/manifest-acme.xml`), puis affecter les utilisateurs/groupes.
-5. Propagation : jusqu'à 24 h officiellement, souvent moins. Tester sur un pilote avant affectation large.
+4. Déployer le manifest dans le tenant client via Exchange Online (méthode retenue le 2026-10-01, ne **pas** utiliser Applications intégrées en plus : doublons) :
+
+   ```powershell
+   Connect-ExchangeOnline -UserPrincipalName <vous>@empirys.com -DelegatedOrganization acme.onmicrosoft.com
+   Get-App -OrganizationApp | Where-Object DisplayName -like '*Link*'   # doit être vide
+   New-App -OrganizationApp -FileData ([System.IO.File]::ReadAllBytes('C:\link-checker\dist\manifest-acme.xml')) -ProvidedTo Everyone -DefaultStateForUser Enabled
+   Disconnect-ExchangeOnline -Confirm:$false
+   ```
+
+   L'app n'apparaît pas dans le centre d'admin M365 (visible uniquement via `Get-App -OrganizationApp`) : noter la date et l'AppId dans la fiche client.
+5. Propagation : souvent quelques heures, prévoir jusqu'à 24 h.
 
 ## Vérifications post-déploiement
 
-Sur un mail de test dans le tenant client : expéditeur interne du client → « Domaine interne (client.com) » en pass, lien vers `acme.sharepoint.com` → pas de signalement multi-tenant, footer → v1.2.0, test sur Outlook mobile → résultat affiché (pas de spinner infini).
+Sur un mail de test dans le tenant client : expéditeur interne du client → « Domaine interne (client.com) » en pass, lien vers `acme.sharepoint.com` → pas de signalement multi-tenant, footer → version courante (`LC.VERSION` dans `src/core.js`), test sur Outlook mobile → résultat affiché (pas de spinner infini).
 
 ## Mise à jour
 
@@ -47,7 +57,7 @@ Le code (`src/`, `clients/`) se met à jour par simple `git push` : effet imméd
 
 ## Risques / rollback
 
-Un `git push` défectueux impacte tous les tenants d'un coup : tester en local avant de pousser, et garder un commit stable identifié pour `git revert`. Rollback côté tenant : Applications intégrées → l'application → Supprimer (ou retirer l'affectation), effet en quelques heures. Le GUID par client isole chaque déploiement : retirer un client n'affecte pas les autres.
+Un `git push` défectueux impacte tous les tenants d'un coup : tester en local avant de pousser, et garder un commit stable identifié pour `git revert`. Rollback côté tenant : `Remove-App -OrganizationApp -Identity <AppId>` (AppId via `Get-App -OrganizationApp`), effet en quelques heures. Le GUID par client isole chaque déploiement : retirer un client n'affecte pas les autres.
 
 ## Contraintes de conformité
 

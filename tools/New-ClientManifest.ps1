@@ -16,9 +16,10 @@
   # -> dist/manifest-acme.xml + clients/acme.json (a completer puis git push)
 
 .NOTES
-  Le manifest genere se deploie dans le tenant du client via
-  Microsoft 365 admin center > Parametres > Applications integrees
-  > Charger des applications personnalisees. Voir DEPLOIEMENT.md.
+  Le manifest genere se deploie dans le tenant du client via Exchange
+  Online : New-App -OrganizationApp (pas via Applications integrees).
+  dist/ n'est pas versionne : le manifest se regenere a l'identique
+  grace au manifestId stocke dans clients/<slug>.json. Voir DEPLOIEMENT.md.
 #>
 [CmdletBinding()]
 param(
@@ -81,4 +82,4 @@ Write-Host ""
 Write-Host "Etapes suivantes :"
 Write-Host "  1. Completer clients/$Client.json (domaines du client)"
 Write-Host "  2. git add clients/$Client.json && git commit && git push  (publie la config sur GitHub Pages)"
-Write-Host "  3. Deployer dist/manifest-$Client.xml dans le tenant client (voir DEPLOIEMENT.md)"
+Write-Host "  3. Deployer dist/manifest-$Client.xml avec New-App -OrganizationApp (voir DEPLOIEMENT.md)"

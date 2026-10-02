@@ -647,7 +647,7 @@
     for (var u = 0; u < rawLinks.length; u++) {
       var uHref = unwrapSafeLinks(rawLinks[u].rawHref);
       if (!isSchemeSafe(uHref)) continue;
-      var key = uHref + ' ' + rawLinks[u].text;
+      var key = uHref + '\u0000' + rawLinks[u].text;
       var entry = seen.get(key);
       if (entry) { entry.occurrences++; continue; }
       entry = { rawHref: rawLinks[u].rawHref, href: uHref, text: rawLinks[u].text, occurrences: 1 };
