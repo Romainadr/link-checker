@@ -21,7 +21,7 @@ jobs:
     if: github.repository == 'empirys/mailwatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Preparer le site (fichiers runtime uniquement)
         run: |
@@ -31,6 +31,12 @@ jobs:
           find clients -maxdepth 1 -name '*.json' ! -name '_*' -exec cp {} _site/clients/ \;
           cp icon-*.png _site/
           cp staticwebapp.config.json _site/
+          # Azure SWA exige un index.html a la racine : page neutre, non indexee
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="fr"><head><meta charset="utf-8"><meta name="robots" content="noindex, nofollow"><title>Empirys MailWatch</title></head>
+          <body><p>Empirys MailWatch</p></body></html>
+          HTML
           echo "Contenu publie :"
           find _site -type f | sort
 
@@ -43,4 +49,3 @@ jobs:
           api_location: ""
           output_location: ""
           skip_app_build: true
-          skip_api_build: true
